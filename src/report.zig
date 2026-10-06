@@ -13,6 +13,7 @@ const target_rate = @import("target_rate.zig");
 const signal = @import("signal.zig");
 const adversarial = @import("adversarial.zig");
 const assoc = @import("assoc.zig");
+const stats = @import("stats.zig");
 
 const Writer = std.Io.Writer;
 
@@ -28,7 +29,7 @@ pub fn write(w: *Writer, a: *const Analysis, limit: usize) Writer.Error!void {
     try w.writeAll("\nCOLUMNS   (missing counts per file: train / test / extra)\n");
     var width: usize = 6;
     for (a.columns) |c| width = @max(width, c.name.len);
-    for (a.columns) |*c| try columnLine(w, c, width);
+    for (a.columns, 0..) |*c, ci| try columnLine(w, c, width, a.column_stats, ci);
 
     // Milestone sections (docs/PLAN.md); each prints nothing until built.
     try signal.write(w, a, limit);
@@ -58,7 +59,7 @@ pub fn write(w: *Writer, a: *const Analysis, limit: usize) Writer.Error!void {
     }
 }
 
-fn columnLine(w: *Writer, c: *const Column, width: usize) Writer.Error!void {
+fn columnLine(w: *Writer, c: *const Column, width: usize, a_stats: []const stats.Extra, ci: usize) Writer.Error!void {
     try w.print("  {s}", .{c.name});
     try w.splatByteAll(' ', width - c.name.len + 2);
     const tag: []const u8 = switch (c.use) {
@@ -113,6 +114,8 @@ fn columnLine(w: *Writer, c: *const Column, width: usize) Writer.Error!void {
         },
         .empty => {},
     }
+    // M7: the shape, as a sparkline, and skew.
+    for (a_stats) |*e| if (e.column == ci) try stats.writeShort(w, e);
     // Shift against train, always shown so "small" can be seen, not assumed.
     if (c.use != .id) if (c.at(.train)) |train| for ([_]Role{ .@"test", .extra }) |r| {
         const o = c.at(r) orelse continue;
@@ -135,6 +138,6 @@ test "column line lists categorical levels most frequent first" {
     var tables = [_]tbl.Table{try tbl.parse(arena, .train, "train", "id,c\n0,rare\n1,top\n2,top\n3,top\n4,mid\n5,mid\n6,x\n7,y\n")};
     const a = try an.analyze(arena, &tables, .{});
     var buf: Writer.Allocating = .init(arena);
-    try columnLine(&buf.writer, &a.columns[1], 4);
+    try columnLine(&buf.writer, &a.columns[1], 4, a.column_stats, 1);
     try testing.expect(std.mem.find(u8, buf.written(), "top 37.5% · mid 25.0% · rare 12.5% · x 12.5% · … 1 more") != null);
 }

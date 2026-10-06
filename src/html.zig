@@ -23,6 +23,7 @@ const signal = @import("signal.zig");
 const strings = @import("strings.zig");
 const adversarial = @import("adversarial.zig");
 const assoc = @import("assoc.zig");
+const stats = @import("stats.zig");
 const Analysis = an.Analysis;
 const Column = an.Column;
 const Role = an.Role;
@@ -743,6 +744,16 @@ fn card(w: *Writer, a: *const Analysis, ci: usize) Writer.Error!void {
         var b2: [40]u8 = undefined;
         try w.print(" — min {s} · median {s} · max {s}", .{ numText(&b0, p.quantile(0)), numText(&b1, p.quantile(0.5)), numText(&b2, p.quantile(1)) });
     };
+    // M7: the shape in numbers.
+    if (stats.statsOf(a, ci)) |e| {
+        var b0: [40]u8 = undefined;
+        var b1: [40]u8 = undefined;
+        if (!std.math.isNan(e.mean))
+            try w.print("<br>mean {s} · sd {s} · skew {d:.2} · excess kurtosis {d:.1}", .{ numText(&b0, e.mean), numText(&b1, e.sd), e.skew, e.kurtosis });
+        if (e.zeros > 0) try w.print(" · zeros {d:.1}%", .{100 * e.zeros});
+        if (e.negatives > 0) try w.print(" · negative {d:.1}%", .{100 * e.negatives});
+        if (!std.math.isNan(e.imbalance)) try w.print("<br>imbalance {d:.2} (0 = even, 1 = one level)", .{e.imbalance});
+    }
     try w.writeAll("</div>");
 
     // This column's findings.

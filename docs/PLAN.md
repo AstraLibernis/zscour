@@ -47,7 +47,7 @@ milestone ships its text and HTML sections together.
 | M4 | Numeric columns that are really discrete/ordinal | `discrete` | **done** |
 | M5 | Adversarial validation (train-vs-test classifier) via zarbor | `adversarial` | **done** |
 | M6 | Associations: Spearman, Cramér's V, correlation ratio | `assoc` | **done** |
-| M7 | Column stats: skew, kurtosis, zeros, imbalance, monotonicity, lag autocorrelation; sparklines | `stats` `bars` | stub |
+| M7 | Column stats: skew, kurtosis, zeros, imbalance, monotonicity, lag autocorrelation; sparklines | `stats` `bars` | **done** |
 | M8 | Columns that go missing together | `missingness` | stub |
 | M9 | More drift scores: PSI, Wasserstein, Cramér's V; rare-level pooling; min-sample guard | `drift` | stub (KS/TV done) |
 | M10 | Later: LoOP outliers, Unicode script mixing, date leakage | — | not started |
@@ -289,12 +289,29 @@ As built:
 - Tests: 10 in `assoc.zig`; 13 mutations, all killed after three fixtures
   (missing categories, a moderate pair, a strong negative pair).
 
-## M7 — column statistics
+## M7 — column statistics  ✓
 
-- Skewness and excess kurtosis (bias-corrected, as pandas), share of zeros and
-  negatives, imbalance score `1 − H/log2(k)`, monotonicity, lag
-  autocorrelation; 8-level sparkline histograms in the column table.
-- Tests: moments against a hand computation; sparkline on known counts.
+As built (train file):
+
+- Numeric: mean, sd, pandas' bias-corrected skewness G1 and excess kurtosis
+  G2, zero and negative shares, monotonicity in file order (ydata's ±2/±1/0),
+  lag-1 autocorrelation, and a 16-bin equal-width histogram (a bin per value
+  for discrete columns) drawn as a sparkline in the text column table; the
+  numbers on each HTML card.
+- Categorical: imbalance 1 − H/log2(k) over the levels present; consecutive
+  rows sharing a level against Σp² (z by normal approximation).
+- Findings (features only — an id is monotonic by nature):
+  - **warn** monotonic in file order: sorted by it, or a row counter. This
+    includes discrete columns — a 0/1 column that never decreases down the
+    file means the file is sorted by it (first draft excluded them; a
+    mutant showed the gap).
+  - note: lag-1 ≥ 0.7 (ydata), categorical runs ≥ 20 points above chance at
+    z ≥ 5, |skew| ≥ 2 (not ydata's 20 — at 20 only freakish columns fire),
+    ≥ 50% zeros (not ydata's 1%), imbalance > 0.5 (ydata). Skew and zeros
+    are not reported for discrete columns.
+- Tests: 7 in `stats.zig` (moments checked by hand against pandas'
+  formulas); 11 mutations, all killed after three fixtures.
+- Cost: +0.1 s on the airline files.
 
 ## M8 — missing together
 

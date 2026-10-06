@@ -26,6 +26,7 @@ so it can gate a pipeline.
 | discrete | numeric columns with ≤ 10 values as binary, integer scale, integer codes or few decimals; whether the target follows a scale in order, naming the value that breaks it (M4) |
 | adversarial | gradient-boosted trees (zarbor) trained to tell train rows from test (and extra) rows: held-out AUC, drift = 2·AUC − 1, and the features that give a file away (M5) |
 | associations | every pair of features: Spearman ρ, Cramér's V (bias-corrected) or the correlation ratio η; pairs ≥ 0.9 flagged as likely redundant; a heatmap in the HTML report (M6) |
+| shape & order | mean, sd, skew, kurtosis, zeros, sparkline histograms; categorical imbalance; columns monotonic in file order, or in runs, flagged as a sorted file (M7) |
 | signal | each column's out-of-fold power to predict the target alone; the same score on the id column and row position, and lag-1 autocorrelation, to catch leaks through file order (M2) |
 | rows | rows whose features repeat an earlier row's, and those among them with a *different* target (irreducible error); test or train rows that exactly copy a train or extra row |
 | submission | header is `id,<target>`, row count and ids match test row for row |
