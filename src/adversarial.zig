@@ -294,7 +294,7 @@ pub fn write(w: *std.Io.Writer, a: *const an.Analysis) std.Io.Writer.Error!void 
     if (a.adversarial.len == 0) return;
     try w.writeAll("\nADVERSARIAL VALIDATION   gradient-boosted trees told to tell the files apart; drift = 2·AUC − 1\n");
     for (a.adversarial) |r| {
-        try w.print("  {s} vs train   AUC {d:.4}   drift {d:.4}   z {d:.1}   ({d} rows a side){s}\n", .{ r.b.label(), r.auc, r.drift, r.z, r.rows_per_side, if (isDrift(r)) "   DRIFT" else "" });
+        try w.print("  {s} ({s}) vs train   AUC {d:.4}   drift {d:.4}   z {d:.1}   ({d} rows a side){s}\n", .{ r.b.label(), a.table(r.b).?.path, r.auc, r.drift, r.z, r.rows_per_side, if (isDrift(r)) "   DRIFT" else "" });
         // At chance there is nothing to attribute: importances are noise.
         if (r.z < z_min) {
             try w.writeAll("    indistinguishable — no feature to attribute\n");

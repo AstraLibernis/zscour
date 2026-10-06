@@ -44,6 +44,17 @@ fn count(w: *Writer, n: usize) Writer.Error!void {
     }
 }
 
+/// "extra (original/data.csv)": the role with the file it was given, for
+/// titles where a bare role name has been misread.
+fn roleTitle(w: *Writer, a: *const Analysis, r: Role) Writer.Error!void {
+    try w.writeAll(roleName(r));
+    if (a.table(r)) |t| {
+        try w.writeAll(" <span class=\"sub\" style=\"font-weight:400\">(");
+        try esc(w, t.path);
+        try w.writeAll(")</span>");
+    }
+}
+
 fn roleName(r: Role) []const u8 {
     return switch (r) {
         .train => "train",
@@ -141,7 +152,9 @@ pub fn write(w: *Writer, a: *const Analysis, opts: an.Options) Writer.Error!void
         try w.print("{s}: ", .{roleName(t.role)});
         try esc(w, t.path);
     }
-    try w.writeAll("</p></div><button id=\"theme\" type=\"button\">Light / dark</button></header>\n");
+    try w.writeAll("</p><p class=\"sub\">train = the data a model learns from (it has the target) · test = the data to predict" ++
+        " · extra = more labelled data, such as the dataset a synthetic competition was generated from · submission = the sample submission</p>");
+    try w.writeAll("</div><button id=\"theme\" type=\"button\">Light / dark</button></header>\n");
 
     try tiles(w, a);
     try findings(w, a);
@@ -351,7 +364,9 @@ fn driftChart(w: *Writer, a: *const Analysis, role: Role, threshold: f64) Writer
     const plot_w = chart_w - plot_x - pad_r - 40; // room for tip labels
     const h = top_pad + @as(f64, @floatFromInt(shown)) * row_h + bottom_pad;
 
-    try w.print("<div class=\"card\"><h3>{s} vs train</h3>", .{roleName(role)});
+    try w.writeAll("<div class=\"card\"><h3>");
+    try roleTitle(w, a, role);
+    try w.writeAll(" vs train</h3>");
     try w.writeAll("<p class=\"meta\">Kolmogorov–Smirnov statistic for numeric columns, total variation distance " ++
         "for categorical ones: 0 = same distribution, 1 = no overlap. ");
     try w.print("The line marks the flag threshold ({d}); values at or past it are bold.", .{threshold});
@@ -488,7 +503,9 @@ fn adversarialSection(w: *Writer, a: *const Analysis) Writer.Error!void {
     try w.writeAll("<h2>Can a model tell the files apart?</h2><div class=\"cards\">");
     for (a.adversarial) |r| {
         const drifted = adversarial.isDrift(r);
-        try w.print("<div class=\"card\"><h3>{s} vs train</h3><p class=\"meta\">", .{roleName(r.b)});
+        try w.writeAll("<div class=\"card\"><h3>");
+        try roleTitle(w, a, r.b);
+        try w.writeAll(" vs train</h3><p class=\"meta\">");
         try w.print("Gradient-boosted trees learn to tell {d} {s} rows from {d} train rows and are scored on rows they did not see. ", .{ r.rows_per_side, roleName(r.b), r.rows_per_side });
         try w.writeAll("AUC 0.5 means the files cannot be told apart; drift = 2·AUC − 1 runs from 0 (same) to 1 (fully separable).</p>");
         try w.print("<div class=\"tiles\" style=\"margin-top:0\"><div class=\"tile\"><div class=\"l\">AUC</div><div class=\"v\">{d:.3}</div></div>" ++
