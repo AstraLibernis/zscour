@@ -7,7 +7,9 @@ M0 answers the first; M1–M9 the rest. Ideas lifted from ydata-profiling,
 sweetviz and deepchecks are credited in [prior-art.md](prior-art.md).
 
 Decided 2026-10-06 with the owner: build order **M1, M2, M3, M4, M5**, then
-**M6, M7**; M8–M10 after. zarbor may be a dependency (M5 only).
+**M6, M7**; M8–M10 after. zarbor may be a dependency (M5 only). The HTML
+report moved up from M10 to **M1.5** at the owner's request, so every later
+milestone ships its text and HTML sections together.
 
 ## Working rules
 
@@ -26,6 +28,12 @@ Decided 2026-10-06 with the owner: build order **M1, M2, M3, M4, M5**, then
   own level, or the pair is dropped — say which.
 - The report stays one screen per section on a 20-column dataset. Detail goes
   behind a flag, not into the default output.
+- **Every milestone with a report section also adds it to `html.zig`**, from
+  the same computed fields: text and HTML never compute separately.
+- HTML charts follow the dataviz rules recorded under M1.5. Render the page
+  and look at it (headless chromium, desktop and 390 px, light and dark)
+  before calling a section done — reading the code missed every layout bug
+  M1.5 found.
 
 ## Status
 
@@ -33,6 +41,7 @@ Decided 2026-10-06 with the owner: build order **M1, M2, M3, M4, M5**, then
 |---|---|---|---|
 | M0 | Well-formed data: bytes, records, header, schema, values, ids, target, duplicates, shift (KS/TV), submission; `--out` cleaning | `table` `analyze` `clean` `report` | **done** (78deabd) |
 | M1 | Target rate per level / per numeric bin, train vs test side by side | `target_rate` `bars` | **done** |
+| M1.5 | HTML report: self-contained page, charts per column, drift overview, findings | `html` | **done** |
 | M2 | Single-feature predictive power; id and row-order leak checks | `signal` | stub |
 | M3 | Base-form spelling match, punctuation-only values, null spellings | `strings` | stub |
 | M4 | Numeric columns that are really discrete/ordinal | `discrete` | stub |
@@ -41,7 +50,7 @@ Decided 2026-10-06 with the owner: build order **M1, M2, M3, M4, M5**, then
 | M7 | Column stats: skew, kurtosis, zeros, imbalance, monotonicity, lag autocorrelation; sparklines | `stats` `bars` | stub |
 | M8 | Columns that go missing together | `missingness` | stub |
 | M9 | More drift scores: PSI, Wasserstein, Cramér's V; rare-level pooling; min-sample guard | `drift` | stub (KS/TV done) |
-| M10 | Later: LoOP outliers, Unicode script mixing, date leakage, HTML report | — | not started |
+| M10 | Later: LoOP outliers, Unicode script mixing, date leakage | — | not started |
 
 ## M1 — target rate by level and by bin  ✓
 
@@ -79,6 +88,39 @@ Known gaps, for later milestones:
   will over-rank many-level features.
 - The COLUMNS table (M0) still prints one line per column: 300 lines for a
   300-column file. Needs a cap or a compact mode.
+
+## M1.5 — HTML report  ✓
+
+`--html FILE`, and `report.html` beside `report.txt` with `--out`. One file:
+inline CSS and SVG, ~15 lines of script (theme toggle, findings filter,
+column search), nothing fetched — works offline. 169 KB for 23 columns;
+2.4 MB for 300.
+
+- Sections: file tiles and finding counts; findings with severity filters
+  (notes start collapsed past 10); per-file drift vs train (KS / total
+  variation, sorted, threshold line, largest 40); a card per column — badges,
+  missing counts, min/median/max, the column's own findings, and M1's rows.
+- Card chart: **two panels sharing the row axis** — share of rows per file
+  (grouped bars) and, when there is a target, the target rate or mean (dots,
+  joined for ordered numeric rows; overall rate as a reference line). Never a
+  second y-axis over the distribution, which is what sweetviz draws.
+- Colours: train / test / extra = the reference palette's first three
+  categorical slots, the only three that validate all-pairs for colour
+  blindness in both themes (dataviz `validate_palette.js`: worst CVD ΔE 9.2
+  light / 9.4 dark). Aqua is under 3:1 on the light surface, so every chart
+  has a table view. Drift bars are one neutral colour — a file's colour must
+  not also mean "flagged"; flagged values are bold beside the threshold line.
+  Severity is always icon + word, never colour alone.
+- Safety: every string from a data file is escaped (`esc`); the script only
+  toggles classes. Tested with a column named `<script>…` and a level
+  `<img onerror=…>`.
+- Phone: charts keep a 540 px minimum and scroll inside their card; the page
+  itself never scrolls sideways (checked at 390 px).
+- Bugs found only by rendering: tiles wrapping, tick labels of neighbouring
+  panels overprinting, notes pushing charts off screen, unreadable charts on
+  a phone, ▲ drawn as a missing glyph, full-precision numbers, axes at twice
+  the data.
+- Tests: 8 in `html.zig`; 9 mutations, all killed.
 
 ## M2 — single-feature signal and leaks
 

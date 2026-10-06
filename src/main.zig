@@ -12,6 +12,7 @@ const tbl = @import("table.zig");
 const an = @import("analyze.zig");
 const report = @import("report.zig");
 const clean = @import("clean.zig");
+const html = @import("html.zig");
 
 const usage =
     \\usage: zscour [DIR] [options]
@@ -27,7 +28,8 @@ const usage =
     \\  --shift X        flag train/test KS or total variation above X (default 0.02)
     \\  --rates N        target-rate tables for the N features that explain most (default 20, 0 = all)
     \\  --no-adversarial skip the train-vs-test classifier
-    \\  --out DIR        write cleaned train/test/extra and report.txt into DIR
+    \\  --html FILE      write the report as a self-contained HTML page with charts
+    \\  --out DIR        write cleaned train/test/extra, report.txt and report.html into DIR
     \\
 ;
 
@@ -35,6 +37,7 @@ const Args = struct {
     files: [4]?[]const u8 = .{ null, null, null, null },
     opts: an.Options = .{},
     out: ?[]const u8 = null,
+    html: ?[]const u8 = null,
     rate_features: usize = 20,
 };
 
@@ -71,6 +74,8 @@ fn parseArgs(arena: std.mem.Allocator, io: std.Io, argv: []const [:0]const u8) !
             args.opts.shift_warn = std.fmt.parseFloat(f64, v) catch return error.BadNumber;
         } else if (std.mem.eql(u8, arg, "--rates")) {
             args.rate_features = std.fmt.parseInt(usize, v, 10) catch return error.BadNumber;
+        } else if (std.mem.eql(u8, arg, "--html")) {
+            args.html = v;
         } else if (std.mem.eql(u8, arg, "--out")) {
             args.out = v;
         } else return error.UnknownOption;
@@ -154,14 +159,24 @@ pub fn main(init: std.process.Init) !void {
         try clean.writeChanges(&text.writer, changes.items);
         try text.writer.print("  → {s}/\n", .{dir_path});
         try dir.writeFile(io, .{ .sub_path = "report.txt", .data = text.written() });
+        try writeHtml(arena, io, dir, "report.html", &a, args.opts);
     }
+
+    if (args.html) |path| try writeHtml(arena, io, std.Io.Dir.cwd(), path, &a, args.opts);
 
     try out.writeAll(text.written());
     try out.flush();
     if (a.count(.err) > 0) std.process.exit(1);
 }
 
+fn writeHtml(arena: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, path: []const u8, a: *const an.Analysis, opts: an.Options) !void {
+    var page: std.Io.Writer.Allocating = .init(arena);
+    try html.write(&page.writer, a, opts);
+    try dir.writeFile(io, .{ .sub_path = path, .data = page.written() });
+}
+
 test {
+    _ = html;
     _ = @import("drift.zig");
     _ = @import("target_rate.zig");
     _ = @import("signal.zig");

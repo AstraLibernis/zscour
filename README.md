@@ -6,6 +6,7 @@ cleaned copies. Single static binary, no dependencies, no Python.
     zscour data/                                   # train.csv, test.csv, sample_submission.csv
     zscour data/ --extra original.csv --out clean/ # also check the source data; write cleaned files
     zscour --train a.csv --test b.csv --target y --id row_id
+    zscour data/ --html report.html                # the report as a page with charts
 
 Exit status: **0** no errors · **1** errors found · **2** usage or I/O failure,
 so it can gate a pipeline.
@@ -52,6 +53,7 @@ modelling decisions, and the report gives you the counts to make them.
     src/table.zig        bytes → raw table; file-level problems
     src/analyze.zig      typed columns, core checks, runs every pass
     src/report.zig       text report        src/clean.zig   --out files
+    src/html.zig         HTML report (M1.5)
     src/drift.zig        KS, total variation (M9: PSI, Wasserstein, Cramér's V)
     src/target_rate.zig  M1   src/signal.zig     M2   src/strings.zig  M3
     src/discrete.zig     M4   src/adversarial.zig M5  src/assoc.zig    M6

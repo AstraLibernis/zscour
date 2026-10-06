@@ -274,9 +274,12 @@ fn layout(cx: an.Ctx, c: *const an.Column, train: *const an.PerTable) !Layout {
 
 /// Fill `cx.a.target_rates`, one entry per feature, and add the pure-rate
 /// findings.
+///
+/// Rows are built for every feature and for the target column itself, with or
+/// without a target: the HTML report draws every column's distribution from
+/// them. Rates exist only for features of a dataset with a target.
 pub fn run(cx: an.Ctx) !void {
     const a = cx.a;
-    if (a.target == null) return;
     var mode, const positive = targetMode(a);
     if (mode == .binary and mode.binary.label.len == 0) mode.binary.label = try fmtNum(cx.arena, positive);
     const y_train = try targetValues(cx, .train, mode, positive);
@@ -296,7 +299,7 @@ pub fn run(cx: an.Ctx) !void {
 
     var out: std.ArrayList(Feature) = .empty;
     for (a.columns, 0..) |*c, ci| {
-        if (c.use != .feature or c.kind == .empty) continue;
+        if (c.use == .id or c.kind == .empty) continue;
         const train = c.at(.train) orelse continue;
         var l = try layout(cx, c, train);
         const n_rows = l.labels.items.len;
@@ -309,7 +312,7 @@ pub fn run(cx: an.Ctx) !void {
         @memset(labelled, .{ 0, 0 });
         for ([_]Role{ .train, .@"test", .extra }, 0..) |role, k| {
             const p = c.at(role) orelse continue;
-            const y = switch (role) {
+            const y = if (c.use == .target) null else switch (role) {
                 .train => y_train,
                 .extra => y_extra,
                 else => null,
@@ -334,7 +337,7 @@ pub fn run(cx: an.Ctx) !void {
             const d = sm[0] / nk - y_mean;
             between += nk * d * d;
         };
-        const eta2: ?f64 = if (y_train == null) null else if (y_ss > 0) between / y_ss else 0;
+        const eta2: ?f64 = if (y_train == null or c.use == .target) null else if (y_ss > 0) between / y_ss else 0;
         var rows: std.ArrayList(Row) = .empty;
         for (0..n_rows) |i| {
             const kind = l.kinds.items[i];
@@ -363,8 +366,9 @@ pub fn run(cx: an.Ctx) !void {
     a.target_mode = mode;
 }
 
+/// Highest η² first; columns without one (the target) after, in file order.
 fn moreExplained(_: void, x: Feature, y: Feature) bool {
-    return x.eta2.? > y.eta2.?;
+    return (x.eta2 orelse -1) > (y.eta2 orelse -1);
 }
 
 fn share(k: usize, n: usize) f64 {
@@ -376,8 +380,11 @@ const bar_width = 10;
 
 /// `limit`: features shown, highest η² first; 0 shows all.
 pub fn write(w: *std.Io.Writer, a: *const an.Analysis, limit: usize) std.Io.Writer.Error!void {
-    if (a.target_rates.len == 0) return;
-    const shown = if (limit == 0) a.target_rates.len else @min(limit, a.target_rates.len);
+    if (a.target == null) return;
+    var features: usize = 0;
+    for (a.target_rates) |f| features += @intFromBool(a.columns[f.column].use == .feature);
+    if (features == 0) return;
+    const shown = if (limit == 0) features else @min(limit, features);
     const target = a.columns[a.target.?].name;
     try w.writeAll("\nTARGET RATE BY LEVEL / BIN");
     switch (a.target_mode) {
@@ -393,7 +400,11 @@ pub fn write(w: *std.Io.Writer, a: *const an.Analysis, limit: usize) std.Io.Writ
         have_extra = have_extra or r.extra_rate != null;
     };
 
-    for (a.target_rates[0..shown]) |f| {
+    var printed: usize = 0;
+    for (a.target_rates) |f| {
+        if (a.columns[f.column].use != .feature) continue;
+        if (printed == shown) break;
+        printed += 1;
         const name = a.columns[f.column].name;
         var label_w: usize = 12;
         var top: f64 = 0;
@@ -430,8 +441,8 @@ pub fn write(w: *std.Io.Writer, a: *const an.Analysis, limit: usize) std.Io.Writ
             try w.writeAll("\n");
         }
     }
-    if (shown < a.target_rates.len)
-        try w.print("\n  … {d} more features (--rates 0 shows all)\n", .{a.target_rates.len - shown});
+    if (shown < features)
+        try w.print("\n  … {d} more features (--rates 0 shows all)\n", .{features - shown});
 }
 
 // ------------------------------------------------------------------ tests
