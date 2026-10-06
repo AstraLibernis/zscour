@@ -16,7 +16,8 @@ const assoc = @import("assoc.zig");
 
 const Writer = std.Io.Writer;
 
-pub fn write(w: *Writer, a: *const Analysis) Writer.Error!void {
+/// `rate_features`: features in the target-rate section; 0 = all.
+pub fn write(w: *Writer, a: *const Analysis, rate_features: usize) Writer.Error!void {
     try w.print("zscour · {d} files · {d} errors · {d} warnings · {d} notes\n\n", .{ a.tables.len, a.count(.err), a.count(.warn), a.count(.info) });
 
     try w.writeAll("FILES\n");
@@ -30,7 +31,7 @@ pub fn write(w: *Writer, a: *const Analysis) Writer.Error!void {
     for (a.columns) |*c| try columnLine(w, c, width);
 
     // Milestone sections (docs/PLAN.md); each prints nothing until built.
-    try target_rate.write(w, a);
+    try target_rate.write(w, a, rate_features);
     try signal.write(w, a);
     try adversarial.write(w, a);
     try assoc.write(w, a);
@@ -85,14 +86,25 @@ fn columnLine(w: *Writer, c: *const Column, width: usize) Writer.Error!void {
             var total: usize = 0;
             for (p.level_counts) |k| total += k;
             try w.writeAll("   ");
-            for (c.levels, p.level_counts, 0..) |lvl, k, i| {
-                if (i == 4) {
-                    try w.print(" · … {d} more", .{c.levels.len - 4});
-                    break;
+            // The most frequent levels, found without allocating: repeated
+            // passes for the next largest count below the previous one.
+            const show = @min(c.levels.len, 4);
+            var prev_count: usize = std.math.maxInt(usize);
+            var prev_id: usize = 0;
+            for (0..show) |i| {
+                var best: ?usize = null;
+                for (p.level_counts, 0..) |k, id| {
+                    const after_prev = k < prev_count or (k == prev_count and id > prev_id);
+                    if (!after_prev) continue;
+                    if (best == null or k > p.level_counts[best.?]) best = id;
                 }
-                const share = if (total == 0) 0 else 100.0 * @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(total));
-                try w.print("{s}{s} {d:.1}%", .{ if (i > 0) " · " else "", lvl, share });
+                const id = best orelse break;
+                prev_count = p.level_counts[id];
+                prev_id = id;
+                const share = if (total == 0) 0 else 100.0 * @as(f64, @floatFromInt(prev_count)) / @as(f64, @floatFromInt(total));
+                try w.print("{s}{s} {d:.1}%", .{ if (i > 0) " · " else "", c.levels[id], share });
             }
+            if (c.levels.len > show) try w.print(" · … {d} more", .{c.levels.len - show});
         },
         .empty => {},
     }
@@ -107,4 +119,17 @@ fn columnLine(w: *Writer, c: *const Column, width: usize) Writer.Error!void {
         try w.print("   {s} {s} {d:.4}", .{ if (c.kind == .numeric) "KS" else "TV", r.label(), d });
     };
     try w.writeAll("\n");
+}
+
+test "column line lists categorical levels most frequent first" {
+    const testing = std.testing;
+    const tbl = @import("table.zig");
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var tables = [_]tbl.Table{try tbl.parse(arena, .train, "train", "id,c\n0,rare\n1,top\n2,top\n3,top\n4,mid\n5,mid\n6,x\n7,y\n")};
+    const a = try an.analyze(arena, &tables, .{});
+    var buf: Writer.Allocating = .init(arena);
+    try columnLine(&buf.writer, &a.columns[1], 4);
+    try testing.expect(std.mem.find(u8, buf.written(), "top 37.5% · mid 25.0% · rare 12.5% · x 12.5% · … 1 more") != null);
 }

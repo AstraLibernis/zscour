@@ -181,6 +181,7 @@ pub const Analysis = struct {
 
     // Filled by the milestone passes; empty until each is built.
     target_rates: []const target_rate.Feature = &.{},
+    target_mode: target_rate.TargetMode = .none,
     signal: []const signal.Score = &.{},
     adversarial: []const adversarial.Result = &.{},
     associations: []const assoc.Pair = &.{},

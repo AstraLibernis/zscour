@@ -32,7 +32,7 @@ Decided 2026-10-06 with the owner: build order **M1, M2, M3, M4, M5**, then
 | | Milestone | Module | State |
 |---|---|---|---|
 | M0 | Well-formed data: bytes, records, header, schema, values, ids, target, duplicates, shift (KS/TV), submission; `--out` cleaning | `table` `analyze` `clean` `report` | **done** (78deabd) |
-| M1 | Target rate per level / per numeric bin, train vs test side by side | `target_rate` `bars` | stub |
+| M1 | Target rate per level / per numeric bin, train vs test side by side | `target_rate` `bars` | **done** |
 | M2 | Single-feature predictive power; id and row-order leak checks | `signal` | stub |
 | M3 | Base-form spelling match, punctuation-only values, null spellings | `strings` | stub |
 | M4 | Numeric columns that are really discrete/ordinal | `discrete` | stub |
@@ -43,24 +43,42 @@ Decided 2026-10-06 with the owner: build order **M1, M2, M3, M4, M5**, then
 | M9 | More drift scores: PSI, Wasserstein, Cramér's V; rare-level pooling; min-sample guard | `drift` | stub (KS/TV done) |
 | M10 | Later: LoOP outliers, Unicode script mixing, date leakage, HTML report | — | not started |
 
-## M1 — target rate by level and by bin
+## M1 — target rate by level and by bin  ✓
 
 *Question: which values of a feature go with the target?*
 
-- Categorical feature: per level, train count %, test count %, and the
-  target rate in train (binary: share positive; numeric target: mean).
-  Levels sorted by train frequency; top N, the rest pooled as "other"; an
-  ALL row with the overall rate.
-- Numeric feature: equal-width bins over the union of train and test ranges
-  (both files share edges), each file's bar normalised to its own size, and
-  the target rate per bin. Missing is its own row. Discrete numerics (M4)
-  use one row per value instead of bins.
-- Rendering: `level │ train% ███ │ test% ██ │ rate` with block characters
-  from `bars.zig`.
-- Findings: a level or bin covering ≥ 1% of train whose target rate is
-  pure (0% or 100%) — a near-deterministic rule worth knowing.
-- Tests: rates on a hand-built table; shared bin edges; missing row; other
-  pooling; pure-rate finding.
+As built (differences from the first draft of this plan in **bold**):
+
+- Categorical feature: per level, train share, test share, target rate in
+  train; **and in extra, when it has a target**. Levels sorted by train count;
+  top 9 shown, the rest pooled as "other (k levels)"; missing is its own row.
+- Numeric feature with ≤ 10 distinct train values: a row per value, test-only
+  values pooled as "other values". Otherwise **equal-count bins that never
+  split a run of equal values** (`binEdges`), not equal-width or plain
+  quantile bins: a 91% spike at one value made quantile edges collapse into a
+  single bin. A bin holding one value is labelled by that value.
+- Rate: a boolean or 0/1 target → share of the positive class (named in the
+  header); any other two-class target → share of its minority class;
+  numeric target → mean; **multiclass → shares only, no rate** (gap, below).
+- **Features are ranked by η²** (correlation ratio squared: between-row
+  variance of the target over its total variance), and the section shows the
+  top 20; `--rates N` changes that, `--rates 0` shows all. Without the cap a
+  300-feature table printed 3 937 lines.
+- Bars: share bars scaled to the feature's largest row; rate bars 0–100%; any
+  nonzero share draws at least 1/8 cell.
+- Finding `pure_rate` (info): a non-"other" row with ≥ 1% of train and ≥ 30
+  rows whose binary rate is exactly 0% or 100%.
+- Tests: 14 in `target_rate.zig` + 2 in `bars.zig`; 21 mutations, all killed
+  except one equivalent mutant (`clamp(i,1,n)−1` ≡ `min(i,n) −| 1`).
+
+Known gaps, for later milestones:
+- Multiclass targets get no rate. Per-class rates (one column per class, or
+  the majority class per row) would fit here.
+- η² is biased upward when a row holds few labelled examples; with ≤ 11 rows
+  per feature this is small on any real train size, but a tiny train file
+  will over-rank many-level features.
+- The COLUMNS table (M0) still prints one line per column: 300 lines for a
+  300-column file. Needs a cap or a compact mode.
 
 ## M2 — single-feature signal and leaks
 
