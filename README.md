@@ -1,7 +1,7 @@
 # zscour
 
 Audit a tabular dataset's CSV files before you model them, and optionally write
-cleaned copies. Single static binary, no dependencies, no Python.
+cleaned copies. Single static binary, no Python.
 
     zscour data/                                   # train.csv, test.csv, sample_submission.csv
     zscour data/ --extra original.csv --out clean/ # also check the source data; write cleaned files
@@ -24,6 +24,7 @@ so it can gate a pipeline.
 | id | missing, duplicated, shared between train and test, unsorted, non-contiguous |
 | target | inferred as the one train column test lacks; class balance; boolean spellings; extra-data levels absent from train; target rate per level / bin (M1); whether a feature being missing predicts the target |
 | discrete | numeric columns with ≤ 10 values as binary, integer scale, integer codes or few decimals; whether the target follows a scale in order, naming the value that breaks it (M4) |
+| adversarial | gradient-boosted trees (zarbor) trained to tell train rows from test (and extra) rows: held-out AUC, drift = 2·AUC − 1, and the features that give a file away (M5) |
 | signal | each column's out-of-fold power to predict the target alone; the same score on the id column and row position, and lag-1 autocorrelation, to catch leaks through file order (M2) |
 | rows | rows whose features repeat an earlier row's, and those among them with a *different* target (irreducible error); test or train rows that exactly copy a train or extra row |
 | submission | header is `id,<target>`, row count and ids match test row for row |
@@ -75,8 +76,13 @@ Modules marked M1–M9 are stubs until their milestone in
     zig build test
 
 The CSV parser is [zsift](https://github.com/AstraLibernis/zsift), vendored
-(see `src/vendor/zsift/VENDORED.md`).
+(see `src/vendor/zsift/VENDORED.md`). Adversarial validation trains
+[zarbor](https://github.com/AstraLibernis/zarbor)'s gradient-boosted trees,
+fetched by `zig build` at a pinned commit.
+
+    zig build test-tsan           # the tests under ThreadSanitizer
 
 ## Licence
 
-GPL-3.0-or-later (`COPYING`). The vendored zsift is LGPL-3.0-or-later.
+GPL-3.0-or-later (`COPYING`). zsift (vendored) and zarbor (dependency) are
+LGPL-3.0-or-later.

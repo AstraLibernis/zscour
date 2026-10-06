@@ -180,6 +180,11 @@ pub const Options = struct {
     adversarial: bool = true,
     /// What makes two spellings one level (M3).
     fold: strings.Fold = .case,
+    /// Thread-safe allocator for zarbor (M5): it trains on a thread pool,
+    /// and the analysis arena is not thread-safe.
+    zarbor_gpa: std.mem.Allocator = std.heap.smp_allocator,
+    /// Worker threads for zarbor; 0 = one per logical core.
+    threads: u32 = 0,
 };
 
 pub const Analysis = struct {

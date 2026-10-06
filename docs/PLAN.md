@@ -45,7 +45,7 @@ milestone ships its text and HTML sections together.
 | M2 | Single-feature predictive power; id and row-order leak checks | `signal` | **done** |
 | M3 | Base-form spelling match, punctuation-only values, null spellings | `strings` | **done** |
 | M4 | Numeric columns that are really discrete/ordinal | `discrete` | **done** |
-| M5 | Adversarial validation (train-vs-test classifier) via zarbor | `adversarial` | stub |
+| M5 | Adversarial validation (train-vs-test classifier) via zarbor | `adversarial` | **done** |
 | M6 | Associations: Spearman, Cramér's V, Theil's U, correlation ratio | `assoc` | stub |
 | M7 | Column stats: skew, kurtosis, zeros, imbalance, monotonicity, lag autocorrelation; sparklines | `stats` `bars` | stub |
 | M8 | Columns that go missing together | `missingness` | stub |
@@ -229,19 +229,39 @@ As built:
   for a bend too small to matter (η² ≈ 0.0001).
 - Cost: none measurable (1.964 s vs 1.948 s).
 
-## M5 — adversarial validation
+## M5 — adversarial validation  ✓
 
 *Question: can a model tell train rows from test rows?*
 
-- Label train 0 and test 1, sample equal sizes, fit zarbor's GBDT
-  (shallow, few rounds), score held-out AUC; report `max(2·AUC − 1, 0)` and
-  the features the model leans on most. Deepchecks' defaults are the starting
-  point (see prior-art.md).
-- zarbor comes in as a `build.zig.zon` dependency pinned to a commit, not
-  vendored. Option `--no-adversarial` to skip.
-- Also run with `--extra` vs train: how different is the original data.
-- Tests: identical distributions score ≈ 0; a planted shifted feature is
-  detected and named.
+As built:
+
+- zarbor is a `build.zig.zon` dependency pinned to commit a9ee25b (LGPL-3.0+,
+  fetched into `zig-pkg/`, which is gitignored). Train vs test, and train vs
+  extra; `--no-adversarial` skips it.
+- Per comparison: up to 10 000 rows a side (fixed-seed sample), categoricals
+  cut to the 254 most frequent levels over both files plus "(other)",
+  a 70/30 split by hash, zarbor GBDT depth 3 × 50 rounds, held-out AUC,
+  drift = max(2·AUC − 1, 0), z against 0.5. **Drift** (warn for test, note
+  for extra) needs drift ≥ 0.1 **and** z ≥ 5; z ≥ 5 below 0.1 is "slightly";
+  otherwise "consistent with one distribution".
+- Which features give the file away: permutation importance on the held-out
+  rows, 3 shuffles of one column of `bins_rm` (what prediction reads), AUC
+  lost, restored after. Shown **only when the files can be told apart** — at
+  chance the importances are noise.
+- Threads: zarbor's pool; everything zarbor allocates comes from
+  `Options.zarbor_gpa` (thread-safe; `testing.allocator` in tests, which
+  checks for leaks). Results are bit-identical on 1, 3 and 16 threads
+  (tested). `zig build test-tsan` runs every test under ThreadSanitizer with
+  zarbor instrumented: clean.
+- A crash found only on the real data: `@min(10_000, …)` typed the sample
+  size as u14, so `2 * m` overflowed at 10 000 rows a side — silently in
+  ReleaseFast (segfault), a panic in Debug. Fixed with `usize`, regression
+  test at the full sample size, and every `@min` against a constant audited.
+- HTML: a card per comparison — AUC, drift, z tiles, the verdict, and the
+  importance bars in that file's colour, with a table.
+- Tests: 10 in `adversarial.zig`; 10 mutations, all killed after two more
+  fixtures (a large gap at low z; frequent levels with ids past 254).
+- Cost on the airline files: +0.33 s wall (2.03 → 2.36 s), 5.3 s CPU.
 
 ## M6 — associations
 

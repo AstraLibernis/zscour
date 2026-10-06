@@ -21,6 +21,7 @@ const drift = @import("drift.zig");
 const target_rate = @import("target_rate.zig");
 const signal = @import("signal.zig");
 const strings = @import("strings.zig");
+const adversarial = @import("adversarial.zig");
 const Analysis = an.Analysis;
 const Column = an.Column;
 const Role = an.Role;
@@ -145,6 +146,7 @@ pub fn write(w: *Writer, a: *const Analysis, opts: an.Options) Writer.Error!void
     try tiles(w, a);
     try findings(w, a);
     try signalSection(w, a);
+    try adversarialSection(w, a);
     try driftSection(w, a, opts);
     try columns(w, a);
 
@@ -473,6 +475,77 @@ fn signalSection(w: *Writer, a: *const Analysis) Writer.Error!void {
         try w.writeAll("</tr>");
     }
     try w.writeAll("</tbody></table></details></div></div>\n");
+}
+
+// ---------------------------------------------------------------- adversarial
+
+const importance_rows_max = 12;
+
+/// M5: per comparison, the classifier's AUC and drift, then the features it
+/// leans on (AUC lost when each is shuffled).
+fn adversarialSection(w: *Writer, a: *const Analysis) Writer.Error!void {
+    if (a.adversarial.len == 0) return;
+    try w.writeAll("<h2>Can a model tell the files apart?</h2><div class=\"cards\">");
+    for (a.adversarial) |r| {
+        const drifted = adversarial.isDrift(r);
+        try w.print("<div class=\"card\"><h3>{s} vs train</h3><p class=\"meta\">", .{roleName(r.b)});
+        try w.print("Gradient-boosted trees learn to tell {d} {s} rows from {d} train rows and are scored on rows they did not see. ", .{ r.rows_per_side, roleName(r.b), r.rows_per_side });
+        try w.writeAll("AUC 0.5 means the files cannot be told apart; drift = 2·AUC − 1 runs from 0 (same) to 1 (fully separable).</p>");
+        try w.print("<div class=\"tiles\" style=\"margin-top:0\"><div class=\"tile\"><div class=\"l\">AUC</div><div class=\"v\">{d:.3}</div></div>" ++
+            "<div class=\"tile\"><div class=\"l\">drift</div><div class=\"v\">{d:.3}</div></div>" ++
+            "<div class=\"tile\"><div class=\"l\">z vs chance</div><div class=\"v\">{d:.1}</div></div></div>", .{ r.auc, r.drift, r.z });
+        try w.print("<p class=\"meta\">{s}</p>", .{if (drifted)
+            "<strong>The files differ: a model trained on train sees a different population in this file.</strong>"
+        else if (r.z >= adversarial.z_min)
+            "Slightly distinguishable, below the drift threshold."
+        else
+            "Consistent with one distribution."});
+
+        // At chance there is nothing to attribute: importances are noise.
+        const shown = if (r.z < adversarial.z_min) 0 else @min(r.top.len, importance_rows_max);
+        if (shown == 0) {
+            try w.writeAll("</div>");
+            continue;
+        }
+        var top: f64 = 0.01;
+        for (r.top[0..shown]) |imp| top = @max(top, imp.drop);
+        top = niceCeil(top);
+        const row_h = 18.0;
+        const plot_x = label_w + 8;
+        const plot_w = chart_w - plot_x - pad_r - 60;
+        const h = top_pad + @as(f64, @floatFromInt(shown)) * row_h + bottom_pad;
+        try w.print("<div class=\"chart\"><svg viewBox=\"0 0 {d} {d:.0}\" role=\"img\" aria-label=\"AUC lost when each feature is shuffled, {s} vs train\">", .{ chart_w, h, roleName(r.b) });
+        try w.print("<text x=\"{d:.1}\" y=\"12\">AUC lost when the feature is shuffled</text>", .{plot_x});
+        for ([_]f64{ 0, 0.5, 1 }) |q| {
+            const x = plot_x + q * plot_w;
+            var buf: [16]u8 = undefined;
+            try w.print("<line class=\"{s}\" x1=\"{d:.1}\" x2=\"{d:.1}\" y1=\"{d}\" y2=\"{d:.1}\"/>", .{ if (q == 0) "base" else "grid", x, x, top_pad - 4, h - bottom_pad });
+            try w.print("<text class=\"tick\" x=\"{d:.1}\" y=\"{d:.1}\" text-anchor=\"{s}\">{s}</text>", .{ x, h - 8, anchor(q), numText(&buf, q * top) });
+        }
+        for (r.top[0..shown], 0..) |imp, i| {
+            const y = top_pad + @as(f64, @floatFromInt(i)) * row_h;
+            const name = a.columns[imp.column].name;
+            try w.writeAll("<g class=\"row\"><title>");
+            try esc(w, name);
+            try w.print(": AUC lost {d:.4}</title>", .{imp.drop});
+            try w.print("<rect class=\"hit\" x=\"0\" y=\"{d:.1}\" width=\"{d}\" height=\"{d}\"/>", .{ y, chart_w, row_h });
+            try w.print("<text x=\"{d}\" y=\"{d:.1}\" text-anchor=\"end\">", .{ label_w, y + 13 });
+            try truncLabel(w, name, 22);
+            try w.writeAll("</text>");
+            const len = @max(0, imp.drop) / top * plot_w;
+            try hbar(w, plot_x, y + 4, len, 10, seriesVar(r.b));
+            try w.print("<text class=\"tick\" x=\"{d:.1}\" y=\"{d:.1}\">{d:.4}</text>", .{ plot_x + len + 6, y + 13, imp.drop });
+            try w.writeAll("</g>");
+        }
+        try w.writeAll("</svg></div><details><summary>Table</summary><table><thead><tr><th>feature</th><th>AUC lost when shuffled</th></tr></thead><tbody>");
+        for (r.top) |imp| {
+            try w.writeAll("<tr><td>");
+            try esc(w, a.columns[imp.column].name);
+            try w.print("</td><td>{d:.4}</td></tr>", .{imp.drop});
+        }
+        try w.writeAll("</tbody></table></details></div>");
+    }
+    try w.writeAll("</div>\n");
 }
 
 // ------------------------------------------------------------------- columns

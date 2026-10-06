@@ -3,3 +3,4 @@ zig-out/
 # test data stays out: datasets usually may not be redistributed
 *.csv
 !src/**/*.csv
+zig-pkg/

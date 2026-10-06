@@ -3,6 +3,11 @@
     .version = "0.1.0",
     .fingerprint = 0x23525c48d86c72fd,
     .minimum_zig_version = "0.16.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .zarbor = .{
+            .url = "git+https://github.com/AstraLibernis/zarbor.git#a9ee25b60033a6e49dacdd255099287d2f47e597",
+            .hash = "zarbor-0.5.0-IulqYLw9CgB2T0_S8AoXZT82VOLUGDSKdOHq9R9A1OTO",
+        },
+    },
     .paths = .{ "build.zig", "build.zig.zon", "src", "README.md", "COPYING" },
 }
