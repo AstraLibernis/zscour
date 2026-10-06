@@ -48,7 +48,7 @@ milestone ships its text and HTML sections together.
 | M5 | Adversarial validation (train-vs-test classifier) via zarbor | `adversarial` | **done** |
 | M6 | Associations: Spearman, Cramér's V, correlation ratio | `assoc` | **done** |
 | M7 | Column stats: skew, kurtosis, zeros, imbalance, monotonicity, lag autocorrelation; sparklines | `stats` `bars` | **done** |
-| M8 | Columns that go missing together | `missingness` | stub |
+| M8 | Columns that go missing together; missingness train vs test; near-empty rows | `missingness` | **done** |
 | M9 | More drift scores: PSI, Wasserstein, Cramér's V; rare-level pooling; min-sample guard | `drift` | stub (KS/TV done) |
 | M10 | Later: LoOP outliers, Unicode script mixing, date leakage | — | not started |
 
@@ -313,10 +313,27 @@ As built (train file):
   formulas); 11 mutations, all killed after three fixtures.
 - Cost: +0.1 s on the airline files.
 
-## M8 — missing together
+## M8 — the structure of missing values  ✓
 
-- Pearson correlation of the 0/1 missing indicators for columns that are
-  partly missing; report pairs ≥ 0.9 and rows missing in several columns.
+As built:
+
+- **Missing together** (ydata's nullity correlation): φ of two features'
+  missing indicators in train, over partly-missing columns, as bitsets (a
+  popcount per 64 rows). Pairs at φ ≥ 0.9 → note ("one cause — one
+  indicator may cover both"), listed in text and HTML.
+- **Missing in test, never in train** → warning: a model never learned what
+  missing means there. **Missing share shifted** between train and test
+  (≥ 2×, ≥ 1 point, z ≥ 5) → warning.
+- **Near-empty rows**: rows missing at least half of the features (≥ 4
+  features; entirely empty columns count neither as a feature nor as
+  missing — they are reported as empty) → note.
+- HTML: a "Missing values" card — the missing share per column as grouped
+  bars per file (any nonzero share drawn visibly), and the together-pairs
+  table.
+- Tests: 6 in `missingness.zig`; 11 mutations, all killed after four
+  fixtures (a partial overlap, a < 2× shift, the "never in train" message,
+  an empty column at the feature-count threshold).
+- Cost: none measurable on the airline files.
 
 ## M9 — drift scores
 

@@ -14,6 +14,7 @@ const signal = @import("signal.zig");
 const adversarial = @import("adversarial.zig");
 const assoc = @import("assoc.zig");
 const stats = @import("stats.zig");
+const missingness = @import("missingness.zig");
 
 const Writer = std.Io.Writer;
 
@@ -36,6 +37,7 @@ pub fn write(w: *Writer, a: *const Analysis, limit: usize) Writer.Error!void {
     try target_rate.write(w, a, limit);
     try adversarial.write(w, a);
     try assoc.write(w, a, limit);
+    try missingness.write(w, a);
 
     for ([_]an.Severity{ .err, .warn, .info }) |sev| {
         const n = a.count(sev);

@@ -163,6 +163,7 @@ pub fn write(w: *Writer, a: *const Analysis, opts: an.Options) Writer.Error!void
     try signalSection(w, a);
     try adversarialSection(w, a);
     try assocSection(w, a);
+    try missingSection(w, a);
     try driftSection(w, a, opts);
     try columns(w, a);
 
@@ -659,6 +660,95 @@ fn assocSection(w: *Writer, a: *const Analysis) Writer.Error!void {
         try w.print("</td><td>{s}</td><td>{d:.3}</td></tr>", .{ p.method.symbol(), p.value });
     }
     try w.writeAll("</tbody></table></details></div></div>\n");
+}
+
+/// M8: missing share per column and file (grouped bars), then the columns
+/// that go missing together.
+fn missingSection(w: *Writer, a: *const Analysis) Writer.Error!void {
+    var cols: [64]usize = undefined;
+    var n: usize = 0;
+    var total: usize = 0;
+    var top: f64 = 0;
+    for (a.columns, 0..) |*c, ci| {
+        if (c.use == .id) continue;
+        var any = false;
+        for ([_]Role{ .train, .@"test", .extra }) |r| if (c.at(r)) |p| {
+            const m = p.missingCount(c.kind);
+            any = any or m > 0;
+            if (p.n > 0) top = @max(top, @as(f64, @floatFromInt(m)) / @as(f64, @floatFromInt(p.n)));
+        };
+        if (!any) continue;
+        total += 1;
+        if (n < cols.len) {
+            cols[n] = ci;
+            n += 1;
+        }
+    }
+    if (n == 0) return;
+    const roles = [_]Role{ .train, .@"test", .extra };
+    var present: [3]bool = .{ false, false, false };
+    for (roles, 0..) |r, k| present[k] = a.table(r) != null;
+    var n_series: usize = 0;
+    for (present) |p| n_series += @intFromBool(p);
+
+    try w.writeAll("<h2>Missing values</h2><div class=\"cards\"><div class=\"card\"><p class=\"meta\">Share of each file's rows missing a value, for every column with any. A column missing in test but never in train, or far more often, is flagged: a model learned nothing about it.");
+    if (n < total) try w.print(" The first {d} of {d} columns.", .{ n, total });
+    try w.writeAll("</p>");
+    try legend(w, a);
+    top = @min(1.0, niceCeil(@max(top, 0.001)));
+    const band = @as(f64, @floatFromInt(n_series)) * (bar_h + bar_gap) + row_pad;
+    const plot_x = label_w + 8;
+    const plot_w = chart_w - plot_x - pad_r - 50;
+    const h = top_pad + @as(f64, @floatFromInt(n)) * band + bottom_pad;
+    try w.print("<div class=\"chart\"><svg viewBox=\"0 0 {d} {d:.0}\" role=\"img\" aria-label=\"Share of rows missing a value, per column and file\">", .{ chart_w, h });
+    for ([_]f64{ 0, 0.5, 1 }) |q| {
+        const x = plot_x + q * plot_w;
+        var buf: [16]u8 = undefined;
+        try w.print("<line class=\"{s}\" x1=\"{d:.1}\" x2=\"{d:.1}\" y1=\"{d}\" y2=\"{d:.1}\"/>", .{ if (q == 0) "base" else "grid", x, x, top_pad - 4, h - bottom_pad });
+        try w.print("<text class=\"tick\" x=\"{d:.1}\" y=\"{d:.1}\" text-anchor=\"{s}\">{s}</text>", .{ x, h - 8, anchor(q), pctText(&buf, q * top) });
+    }
+    for (cols[0..n], 0..) |ci, i| {
+        const c = &a.columns[ci];
+        const y = top_pad + @as(f64, @floatFromInt(i)) * band;
+        try w.writeAll("<g class=\"row\"><title>");
+        try esc(w, c.name);
+        for (roles) |r| if (c.at(r)) |p| {
+            var buf: [16]u8 = undefined;
+            try w.print(" · {s} {s} (", .{ roleName(r), pctText(&buf, if (p.n > 0) @as(f64, @floatFromInt(p.missingCount(c.kind))) / @as(f64, @floatFromInt(p.n)) else 0) });
+            try count(w, p.missingCount(c.kind));
+            try w.writeAll(")");
+        };
+        try w.print("</title><rect class=\"hit\" x=\"0\" y=\"{d:.1}\" width=\"{d}\" height=\"{d:.1}\"/>", .{ y, chart_w, band });
+        try w.print("<text x=\"{d}\" y=\"{d:.1}\" text-anchor=\"end\">", .{ label_w, y + band / 2 + 4 - row_pad / 2 });
+        try truncLabel(w, c.name, 22);
+        try w.writeAll("</text>");
+        var k: usize = 0;
+        for (roles, present) |r, pr| {
+            if (!pr) continue;
+            defer k += 1;
+            const p = c.at(r) orelse continue;
+            const share = if (p.n > 0) @as(f64, @floatFromInt(p.missingCount(c.kind))) / @as(f64, @floatFromInt(p.n)) else 0;
+            // Any nonzero share stays visible.
+            const len = if (share > 0) @max(2.0, share / top * plot_w) else 0;
+            try hbar(w, plot_x, y + @as(f64, @floatFromInt(k)) * (bar_h + bar_gap), len, bar_h, seriesVar(r));
+        }
+        try w.writeAll("</g>");
+    }
+    try w.writeAll("</svg></div>");
+    if (a.missing_together.len > 0) {
+        try w.writeAll("<details open><summary>Columns that go missing together (train)</summary><table><thead><tr><th>pair</th><th>φ</th><th>both missing</th></tr></thead><tbody>");
+        for (a.missing_together) |p| {
+            try w.writeAll("<tr><td>");
+            try esc(w, a.columns[p.a].name);
+            try w.writeAll(" · ");
+            try esc(w, a.columns[p.b].name);
+            try w.print("</td><td>{d:.3}</td><td>", .{p.r});
+            try count(w, p.both);
+            try w.writeAll("</td></tr>");
+        }
+        try w.writeAll("</tbody></table></details>");
+    }
+    try w.writeAll("</div></div>\n");
 }
 
 fn pairOf(a: *const Analysis, x: usize, y: usize) ?assoc.Pair {
