@@ -17,3 +17,5 @@ submission 299,844 × 2.
 | 2026-10-06 | M3 | `zscour data --extra original/data.csv` | 1.948 s ± 0.003 | — | hyperfine -N, 5 runs; first M3 draft 2.356 s (base-form markers on every field), fixed by a first-letter reject |
 | 2026-10-06 | M4 | `zscour data --extra original/data.csv` | 1.964 s ± 0.004 | — | hyperfine -N, 5 runs |
 | 2026-10-06 | M5 | same, with / without `--no-adversarial` | 2.358 / 2.031 s | — | hyperfine -N, 5 runs; adversarial uses all cores (User 5.28 s) |
+| 2026-10-06 | M6 | airline, all on | 2.491 s ± 0.006 | — | hyperfine -N, 5 runs |
+| 2026-10-06 | M6 | 300-column generated file, `--no-adversarial` | 2.681 → 1.537 s | 431 MB | one-pass Spearman for complete columns |

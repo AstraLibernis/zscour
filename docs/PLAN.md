@@ -46,7 +46,7 @@ milestone ships its text and HTML sections together.
 | M3 | Base-form spelling match, punctuation-only values, null spellings | `strings` | **done** |
 | M4 | Numeric columns that are really discrete/ordinal | `discrete` | **done** |
 | M5 | Adversarial validation (train-vs-test classifier) via zarbor | `adversarial` | **done** |
-| M6 | Associations: Spearman, Cramér's V, Theil's U, correlation ratio | `assoc` | stub |
+| M6 | Associations: Spearman, Cramér's V, correlation ratio | `assoc` | **done** |
 | M7 | Column stats: skew, kurtosis, zeros, imbalance, monotonicity, lag autocorrelation; sparklines | `stats` `bars` | stub |
 | M8 | Columns that go missing together | `missingness` | stub |
 | M9 | More drift scores: PSI, Wasserstein, Cramér's V; rare-level pooling; min-sample guard | `drift` | stub (KS/TV done) |
@@ -263,13 +263,31 @@ As built:
   fixtures (a large gap at low z; frequent levels with ids past 254).
 - Cost on the airline files: +0.33 s wall (2.03 → 2.36 s), 5.3 s CPU.
 
-## M6 — associations
+## M6 — associations  ✓
 
-- Numeric × numeric Spearman; categorical × categorical bias-corrected
-  Cramér's V (and Theil's U, asymmetric); numeric × categorical correlation
-  ratio η. Missing handled per the working rules.
-- Report: feature ↔ target ranking and feature pairs ≥ 0.9.
-- Tests: each formula against a hand-computed example.
+As built:
+
+- Every pair of features on ≤ 100 000 train rows (fixed-seed sample):
+  Spearman ρ (numeric × numeric, ties averaged), Cramér's V with Bergsma's
+  bias correction (categorical × categorical, ydata's formula without
+  scipy's 2×2 Yates correction), correlation ratio η (mixed, sweetviz).
+  All in [0, 1] by absolute value; ranked by it.
+- Missing values are dropped pair by pair, never replaced by 0. Spearman is
+  exact: a pair where either column has missing values is re-ranked on the
+  shared rows (ranks over each column alone left gaps — a test caught ρ =
+  −0.9988 for an exactly opposite pair).
+- A constant column has V = 0 (ydata returns 1). Categoricals with more than
+  100 levels are skipped and listed. Theil's U is **not** computed: it is
+  asymmetric and V already answers "are these two redundant?".
+- Pairs at |value| ≥ 0.9 (ydata's HIGH_CORRELATION) → warning.
+- Text: strongest pairs (`--top`). HTML: a heatmap of up to 40 columns (the
+  most associated), one hue at opacity = strength so it reads in both themes,
+  pairs ≥ 0.9 outlined, a legend ramp, tooltips, a table of the 30 strongest.
+- Speed: complete numeric columns keep standardised ranks, so their ρ is one
+  dot product; the 300-column file went from 2.68 s to 1.54 s
+  (`--no-adversarial`). Airline: +0.13 s.
+- Tests: 10 in `assoc.zig`; 13 mutations, all killed after three fixtures
+  (missing categories, a moderate pair, a strong negative pair).
 
 ## M7 — column statistics
 

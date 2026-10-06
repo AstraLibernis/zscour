@@ -209,6 +209,9 @@ pub const Analysis = struct {
     order: ?signal.Order = null,
     adversarial: []const adversarial.Result = &.{},
     associations: []const assoc.Pair = &.{},
+    /// Categoricals left out of M6 (too many levels), and its sample size.
+    assoc_skipped: []const usize = &.{},
+    assoc_rows: usize = 0,
     column_stats: []const stats.Extra = &.{},
     missing_together: []const missingness.Pair = &.{},
 

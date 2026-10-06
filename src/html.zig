@@ -22,6 +22,7 @@ const target_rate = @import("target_rate.zig");
 const signal = @import("signal.zig");
 const strings = @import("strings.zig");
 const adversarial = @import("adversarial.zig");
+const assoc = @import("assoc.zig");
 const Analysis = an.Analysis;
 const Column = an.Column;
 const Role = an.Role;
@@ -160,6 +161,7 @@ pub fn write(w: *Writer, a: *const Analysis, opts: an.Options) Writer.Error!void
     try findings(w, a);
     try signalSection(w, a);
     try adversarialSection(w, a);
+    try assocSection(w, a);
     try driftSection(w, a, opts);
     try columns(w, a);
 
@@ -563,6 +565,104 @@ fn adversarialSection(w: *Writer, a: *const Analysis) Writer.Error!void {
         try w.writeAll("</tbody></table></details></div>");
     }
     try w.writeAll("</div>\n");
+}
+
+// -------------------------------------------------------------- associations
+
+const heat_max = 40;
+const heat_pairs_listed = 30;
+
+/// M6: a heatmap of association strength between feature columns (file
+/// order), then the strongest pairs as a table.
+fn assocSection(w: *Writer, a: *const Analysis) Writer.Error!void {
+    if (a.associations.len == 0) return;
+    // Columns in the map: every feature with a pair; past `heat_max`, the
+    // ones with the strongest pairs.
+    var in_map: [heat_max]usize = undefined;
+    var n: usize = 0;
+    for (a.associations) |p| { // strongest first
+        for ([_]usize{ p.a, p.b }) |ci| {
+            if (n == heat_max) break;
+            if (std.mem.findScalar(usize, in_map[0..n], ci) == null) {
+                in_map[n] = ci;
+                n += 1;
+            }
+        }
+    }
+    std.mem.sort(usize, in_map[0..n], {}, std.sort.asc(usize));
+    var total: usize = 0;
+    for (a.columns, 0..) |_, ci| {
+        for (a.associations) |p| if (p.a == ci or p.b == ci) {
+            total += 1;
+            break;
+        };
+    }
+
+    try w.writeAll("<h2>Which columns carry the same information</h2><div class=\"cards\"><div class=\"card\"><p class=\"meta\">");
+    try w.print("Association between every pair of features on {d} train rows: Spearman's ρ for two numeric columns, Cramér's V for two categorical ones, the correlation ratio η for one of each. ", .{a.assoc_rows});
+    try w.writeAll("Darker = stronger, from 0 (unrelated) to 1 (one determines the other); pairs at 0.9 or more are flagged as likely redundant. Missing values are left out pair by pair.");
+    if (n < total) try w.print(" The {d} most associated of {d} columns.", .{ n, total });
+    try w.writeAll("</p>");
+
+    const label_space = 150.0;
+    const top_space = 120.0;
+    const cell = @min(22.0, (chart_w - label_space - pad_r) / @as(f64, @floatFromInt(n)));
+    const grid = cell * @as(f64, @floatFromInt(n));
+    const legend_h = 46.0;
+    const h = top_space + grid + legend_h;
+    try w.print("<div class=\"chart\"><svg viewBox=\"0 0 {d} {d:.0}\" role=\"img\" aria-label=\"Association strength between feature columns\">", .{ chart_w, h });
+    try w.writeAll("<defs><linearGradient id=\"assoc-ramp\"><stop offset=\"0\" stop-color=\"var(--s-train)\" stop-opacity=\"0.04\"/><stop offset=\"1\" stop-color=\"var(--s-train)\" stop-opacity=\"1\"/></linearGradient></defs>");
+    for (in_map[0..n], 0..) |ci, i| {
+        const y = top_space + @as(f64, @floatFromInt(i)) * cell;
+        const x = label_space + @as(f64, @floatFromInt(i)) * cell;
+        try w.print("<text x=\"{d:.1}\" y=\"{d:.1}\" text-anchor=\"end\" font-size=\"11\">", .{ label_space - 6, y + cell / 2 + 4 });
+        try truncLabel(w, a.columns[ci].name, 22);
+        try w.print("</text><text transform=\"translate({d:.1},{d:.1}) rotate(-55)\" font-size=\"11\">", .{ x + cell / 2 + 3, top_space - 6 });
+        try truncLabel(w, a.columns[ci].name, 22);
+        try w.writeAll("</text>");
+    }
+    for (in_map[0..n], 0..) |ri, i| for (in_map[0..n], 0..) |cj, j| {
+        const x = label_space + @as(f64, @floatFromInt(j)) * cell;
+        const y = top_space + @as(f64, @floatFromInt(i)) * cell;
+        if (i == j) {
+            try w.print("<rect x=\"{d:.1}\" y=\"{d:.1}\" width=\"{d:.1}\" height=\"{d:.1}\" fill=\"var(--grid)\"/>", .{ x + 1, y + 1, cell - 2, cell - 2 });
+            continue;
+        }
+        const p = pairOf(a, ri, cj) orelse continue;
+        try w.print("<rect x=\"{d:.1}\" y=\"{d:.1}\" width=\"{d:.1}\" height=\"{d:.1}\" fill=\"var(--s-train)\" fill-opacity=\"{d:.3}\"{s}><title>", .{
+            x + 1, y + 1, cell - 2, cell - 2, 0.04 + 0.96 * p.strength(),
+            if (p.strength() >= assoc.high) " stroke=\"var(--ink-1)\" stroke-width=\"1.5\"" else "",
+        });
+        try esc(w, a.columns[ri].name);
+        try w.writeAll(" · ");
+        try esc(w, a.columns[cj].name);
+        try w.print(": {s} = {d:.3}</title></rect>", .{ p.method.symbol(), p.value });
+    };
+    // Legend: the ramp from 0 to 1, the flag threshold marked.
+    const ly = top_space + grid + 18;
+    const lw = 220.0;
+    try w.print("<rect x=\"{d}\" y=\"{d:.1}\" width=\"{d}\" height=\"10\" fill=\"url(#assoc-ramp)\"/>", .{ label_space, ly, lw });
+    for ([_]f64{ 0, 0.5, 1 }) |q| {
+        var buf: [16]u8 = undefined;
+        try w.print("<text class=\"tick\" x=\"{d:.1}\" y=\"{d:.1}\" text-anchor=\"{s}\">{s}</text>", .{ label_space + q * lw, ly + 24, anchor(q), numText(&buf, q) });
+    }
+    try w.print("<text class=\"tick\" x=\"{d:.1}\" y=\"{d:.1}\">outlined: ≥ {d} (likely redundant)</text>", .{ label_space + lw + 14, ly + 9, assoc.high });
+    try w.writeAll("</svg></div>");
+
+    try w.writeAll("<details><summary>Strongest pairs</summary><table><thead><tr><th>pair</th><th>measure</th><th>value</th></tr></thead><tbody>");
+    for (a.associations[0..@min(a.associations.len, heat_pairs_listed)]) |p| {
+        try w.writeAll("<tr><td>");
+        try esc(w, a.columns[p.a].name);
+        try w.writeAll(" · ");
+        try esc(w, a.columns[p.b].name);
+        try w.print("</td><td>{s}</td><td>{d:.3}</td></tr>", .{ p.method.symbol(), p.value });
+    }
+    try w.writeAll("</tbody></table></details></div></div>\n");
+}
+
+fn pairOf(a: *const Analysis, x: usize, y: usize) ?assoc.Pair {
+    for (a.associations) |p| if ((p.a == x and p.b == y) or (p.a == y and p.b == x)) return p;
+    return null;
 }
 
 // ------------------------------------------------------------------- columns

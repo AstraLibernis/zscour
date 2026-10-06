@@ -34,7 +34,7 @@ pub fn write(w: *Writer, a: *const Analysis, limit: usize) Writer.Error!void {
     try signal.write(w, a, limit);
     try target_rate.write(w, a, limit);
     try adversarial.write(w, a);
-    try assoc.write(w, a);
+    try assoc.write(w, a, limit);
 
     for ([_]an.Severity{ .err, .warn, .info }) |sev| {
         const n = a.count(sev);
