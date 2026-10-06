@@ -19,7 +19,7 @@ so it can gate a pipeline.
 | records | CSV quoting errors (with record number), blank lines, records with the wrong field count |
 | header | empty, duplicate and whitespace-padded column names |
 | schema | test missing a train feature (or having an extra one), extra data's columns, column order |
-| values | missing counts by kind (empty, `NA`/`NaN`/`null`/… markers, junk text in a numeric column, ±inf), two missing spellings in one column, whitespace padding, a few fractions in a whole-number column, case variants of one level (`Eco`/`eco`), mixed numeric/text columns, constant and very high-cardinality columns, missing markers used as categorical levels |
+| values | missing counts by kind (empty, `NA`/`N/A`/`null`/`#N/A`/… markers matched on base form, junk text in a numeric column, ±inf), two or more missing spellings in one column, whitespace padding, a few fractions in a whole-number column, case variants of one level (`Eco`/`eco`), spelling variants beyond case (`New-York`/`new york`; reported, merged only with `--fold spelling`), punctuation-only placeholders (`-`, `***`), invisible characters shown as `<U+00A0>`, mixed numeric/text columns, constant and very high-cardinality columns, missing markers used as categorical levels |
 | across files | test levels never seen in train, test values outside train's range, train-vs-test shift (KS for numeric, total variation for categorical) — also for `--extra` |
 | id | missing, duplicated, shared between train and test, unsorted, non-contiguous |
 | target | inferred as the one train column test lacks; class balance; boolean spellings; extra-data levels absent from train; target rate per level / bin (M1) |

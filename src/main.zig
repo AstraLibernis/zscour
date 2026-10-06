@@ -28,6 +28,8 @@ const usage =
     \\  --shift X        flag train/test KS or total variation above X (default 0.02)
     \\  --top N          features listed in the signal and target-rate sections (default 20, 0 = all)
     \\  --no-adversarial skip the train-vs-test classifier
+    \\  --fold case|spelling  what makes two spellings one level: case only (default),
+    \\                   or also punctuation and spaces ("New-York" = "new york")
     \\  --html FILE      write the report as a self-contained HTML page with charts
     \\  --out DIR        write cleaned train/test/extra, report.txt and report.html into DIR
     \\
@@ -74,6 +76,8 @@ fn parseArgs(arena: std.mem.Allocator, io: std.Io, argv: []const [:0]const u8) !
             args.opts.shift_warn = std.fmt.parseFloat(f64, v) catch return error.BadNumber;
         } else if (std.mem.eql(u8, arg, "--top")) {
             args.top = std.fmt.parseInt(usize, v, 10) catch return error.BadNumber;
+        } else if (std.mem.eql(u8, arg, "--fold")) {
+            args.opts.fold = std.meta.stringToEnum(@import("strings.zig").Fold, v) orelse return error.BadFold;
         } else if (std.mem.eql(u8, arg, "--html")) {
             args.html = v;
         } else if (std.mem.eql(u8, arg, "--out")) {

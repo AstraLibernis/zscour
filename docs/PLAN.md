@@ -43,7 +43,7 @@ milestone ships its text and HTML sections together.
 | M1 | Target rate per level / per numeric bin, train vs test side by side | `target_rate` `bars` | **done** |
 | M1.5 | HTML report: self-contained page, charts per column, drift overview, findings | `html` | **done** |
 | M2 | Single-feature predictive power; id and row-order leak checks | `signal` | **done** |
-| M3 | Base-form spelling match, punctuation-only values, null spellings | `strings` | stub |
+| M3 | Base-form spelling match, punctuation-only values, null spellings | `strings` | **done** |
 | M4 | Numeric columns that are really discrete/ordinal | `discrete` | stub |
 | M5 | Adversarial validation (train-vs-test classifier) via zarbor | `adversarial` | stub |
 | M6 | Associations: Spearman, Cramér's V, Theil's U, correlation ratio | `assoc` | stub |
@@ -157,17 +157,43 @@ As built:
   in-fold multiclass scoring; none separated power from z in the leak rule).
 - Cost: +0.16 s on the airline run (1.82 → 1.98 s).
 
-## M3 — spelling variants beyond case
+## M3 — spelling variants beyond case  ✓
 
-- Base form = drop every non-alphanumeric character, lowercase; if that
-  leaves nothing, keep the original (deepchecks' rule). Group levels by base
-  form; more than one spelling is a variant group. Replaces the case-only
-  check and feeds `clean`'s folding.
-- Values whose base form is empty (`?`, `-`, `***`): punctuation-only,
-  probably placeholders.
-- Missing markers matched on base form too (`N/A`, `n.a.`, `NULL`).
-- Train/test: base forms whose test spellings train never uses.
-- Tests: grouping, empty-base fallback, clean output uses one spelling.
+As built:
+
+- **Base form** (deepchecks' rule): alphanumerics only, ASCII-lowercased;
+  the value itself when nothing is left. Non-ASCII letters count as letters;
+  Latin-1 punctuation/NBSP, General Punctuation, CJK punctuation and the
+  fullwidth/small-form punctuation blocks count as punctuation. Case folding
+  stays ASCII only (gap, M10).
+- **Spelling variants**: spellings that share a base form but are separate
+  levels → warn, with rows per file; test spellings train never uses for a
+  value train has → warn on test. **Reported, not merged**: punctuation can
+  matter ("A-1"/"A1", "C++"/"C"). `--fold spelling` makes base-form groups one
+  level (clean writes the most common spelling); default `--fold case`.
+  Values that parse as numbers never join a base-form group ("-5"/"5",
+  "1.5"/"15").
+- **Punctuation-only values** ("-", "***", "—") in categorical columns, per
+  file, not counting missing markers: warn above 0.1% of rows (deepchecks'
+  `special_chars` default), note below.
+- **Missing markers on base form**: "N/A", "n.a.", "#N/A", "(null)", "<NA>",
+  "NULL" now count. **Mixed missing** now fires on two marker spellings even
+  with no empty fields, and lists the spellings.
+- **Invisible characters are shown**: NBSP, zero-width, BOM, control and
+  Unicode spaces print as `<U+00A0>` in findings, the text tables and every
+  data string on the HTML page — "New York" and "New<U+00A0>York" no longer
+  look identical anywhere.
+- HTML: a "Spelling variants" table in each affected column's card.
+- Performance: the M3 check works from the distinct spellings `analyze`
+  already collected and scans rows only for a column with something to
+  report. Marker matching on base form first cost +19% (1.98 → 2.36 s,
+  every field passes through it while sniffing types); a first-letter reject
+  ("n" or "N") brought it to 1.95 s.
+- A borrowed-slice bug was caught by a test before commit: the base form
+  lived in a buffer the next key computation overwrote.
+- Tests: 11 in `strings.zig` + 2 in `html.zig`; every mutation killed
+  (one, "merged groups re-reported", needed a new fixture after the
+  row-scan shortcut masked it).
 
 ## M4 — numeric but really discrete
 

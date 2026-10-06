@@ -26,6 +26,7 @@
 const std = @import("std");
 const an = @import("analyze.zig");
 const bars = @import("bars.zig");
+const strings = @import("strings.zig");
 const Role = an.Role;
 
 /// Rows per feature before the tail is pooled into "other", and the most
@@ -423,9 +424,17 @@ pub fn write(w: *std.Io.Writer, a: *const an.Analysis, limit: usize) std.Io.Writ
         if (f.eta2) |e| try w.print("   η² {d:.4}", .{e});
         try w.print("{s}\n", .{if (f.binned) "   (equal-count train bins)" else ""});
         for (f.rows) |r| {
-            const label = if (r.label.len > 24) r.label[0..23] else r.label;
-            try w.print("    {s}{s}", .{ label, if (r.label.len > 24) "…" else "" });
-            try w.splatByteAll(' ', label_w - @min(r.label.len, 24) + 2);
+            // Visible form: invisible characters as <U+00A0>, so two rows
+            // that differ only there do not print identically.
+            var vbuf: [96]u8 = undefined;
+            var vw: std.Io.Writer = .fixed(&vbuf);
+            const fits = if (vw.print("{f}", .{strings.visible(r.label)})) |_| true else |_| false;
+            const text = if (fits) vw.buffered() else r.label;
+            var end = @min(text.len, 23);
+            while (text.len > 24 and end > 0 and (text[end] & 0xC0) == 0x80) end -= 1; // UTF-8 boundary
+            const label = if (text.len > 24) text[0..end] else text;
+            try w.print("    {s}{s}", .{ label, if (text.len > 24) "…" else "" });
+            try w.splatByteAll(' ', label_w -| (label.len + @as(usize, @intFromBool(text.len > 24))) + 2);
             try w.print("train {d:>5.1}% ", .{100 * r.train_share});
             try bars.bar(w, if (top > 0) r.train_share / top else 0, bar_width);
             if (r.test_share) |ts| {

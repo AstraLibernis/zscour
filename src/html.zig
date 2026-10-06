@@ -20,28 +20,17 @@ const an = @import("analyze.zig");
 const drift = @import("drift.zig");
 const target_rate = @import("target_rate.zig");
 const signal = @import("signal.zig");
+const strings = @import("strings.zig");
 const Analysis = an.Analysis;
 const Column = an.Column;
 const Role = an.Role;
 const Writer = std.Io.Writer;
 
-/// Escape for HTML text and attribute values.
+/// Escape for HTML text and attribute values. Characters a reader cannot
+/// see (NBSP, zero-width, control) are written as <U+00A0>, so two values
+/// that differ only there never look identical on the page.
 fn esc(w: *Writer, s: []const u8) Writer.Error!void {
-    var start: usize = 0;
-    for (s, 0..) |ch, i| {
-        const rep: []const u8 = switch (ch) {
-            '&' => "&amp;",
-            '<' => "&lt;",
-            '>' => "&gt;",
-            '"' => "&quot;",
-            '\'' => "&#39;",
-            else => continue,
-        };
-        try w.writeAll(s[start..i]);
-        try w.writeAll(rep);
-        start = i + 1;
-    }
-    try w.writeAll(s[start..]);
+    try w.print("{f}", .{strings.visibleHtml(s)});
 }
 
 /// 1234567 → "1,234,567".
@@ -577,6 +566,7 @@ fn card(w: *Writer, a: *const Analysis, ci: usize) Writer.Error!void {
         try rowChart(w, a, c, ft);
         try rowTable(w, a, ft);
     }
+    try spellingTable(w, a, ci);
     try w.writeAll("</article>\n");
 }
 
@@ -717,6 +707,36 @@ fn rowChart(w: *Writer, a: *const Analysis, c: *const Column, f: *const target_r
     try w.writeAll("</svg></div>");
 }
 
+/// M3: spellings that share a base form but are separate levels, with rows
+/// per file. Open by default: it is the finding, not a detail.
+fn spellingTable(w: *Writer, a: *const Analysis, ci: usize) Writer.Error!void {
+    var any = false;
+    for (a.spelling_groups) |g| any = any or g.column == ci;
+    if (!any) return;
+    var has = [3]bool{ false, false, false };
+    for (a.spelling_groups) |g| if (g.column == ci) for (g.spellings) |sp| for (sp.rows, 0..) |k, i| {
+        has[i] = has[i] or k > 0;
+    };
+    try w.writeAll("<details open><summary>Spelling variants (separate levels; --fold spelling merges them)</summary><table><thead><tr><th>spelling</th>");
+    for ([_][]const u8{ "train", "test", "extra" }, has) |name, h| if (h) try w.print("<th>{s}</th>", .{name});
+    try w.writeAll("</tr></thead><tbody>");
+    for (a.spelling_groups) |g| {
+        if (g.column != ci) continue;
+        for (g.spellings, 0..) |sp, i| {
+            try w.print("<tr{s}><td>", .{if (i == 0) " style=\"border-top:2px solid var(--axis)\"" else ""});
+            try w.print("{f}", .{strings.visibleHtml(sp.text)});
+            try w.writeAll("</td>");
+            for (sp.rows, has) |k, h| if (h) {
+                try w.writeAll("<td>");
+                try count(w, k);
+                try w.writeAll("</td>");
+            };
+            try w.writeAll("</tr>");
+        }
+    }
+    try w.writeAll("</tbody></table></details>");
+}
+
 /// The chart's numbers as a table: every value reachable without hovering.
 fn rowTable(w: *Writer, a: *const Analysis, f: *const target_rate.Feature) Writer.Error!void {
     var has_test = false;
@@ -787,6 +807,25 @@ test "a hostile column name or level is escaped everywhere, never markup" {
     try testing.expect(std.mem.find(u8, html, "<img") == null);
     try testing.expect(std.mem.find(u8, html, "&lt;script&gt;alert(1)&lt;/script&gt;") != null);
     try testing.expect(std.mem.find(u8, html, "&lt;img src=x onerror=alert(2)&gt;") != null);
+}
+
+test "spelling variants get a table in their column's card, escaped" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const html = try render(arena_state.allocator(), "id,c\n0,New York\n1,new-york\n2,<b>NY</b>\n3,NY\n", null);
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "Spelling variants (separate levels"));
+    try testing.expect(std.mem.find(u8, html, "<td>new-york</td>") != null);
+    try testing.expect(std.mem.find(u8, html, "<b>NY") == null);
+    try testing.expect(std.mem.find(u8, html, "&lt;b&gt;NY&lt;/b&gt;") != null);
+}
+
+test "an invisible character is visible everywhere a value appears" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const html = try render(arena_state.allocator(), "id,c,y\n0,New York,1\n1,New\u{00A0}York,0\n2,New York,1\n", null);
+    // Chart label, tooltip, table row, spelling table, findings.
+    try testing.expect(std.mem.count(u8, html, "New&lt;U+00A0&gt;York") >= 4);
+    try testing.expect(std.mem.find(u8, html, "New\u{00A0}York") == null);
 }
 
 test "page is self-contained: no external fetches" {

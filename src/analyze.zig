@@ -105,6 +105,9 @@ pub const PerTable = struct {
     /// NA, NaN, null, … In a numeric column they are missing; in a
     /// categorical column they stay levels (`marker_level`).
     markers: usize = 0,
+    /// The first few distinct marker spellings ("NA", "null", …).
+    marker_spellings: [4][]const u8 = undefined,
+    n_marker_spellings: usize = 0,
     padded: Examples = .{},
     /// Numeric column, field not a number. Treated as missing.
     junk: Examples = .{},
@@ -119,6 +122,13 @@ pub const PerTable = struct {
     sorted: []f64 = &.{},
     /// Categorical: rows per level id.
     level_counts: []usize = &.{},
+
+    fn noteMarker(p: *PerTable, s: []const u8) void {
+        p.markers += 1;
+        for (p.marker_spellings[0..@min(p.n_marker_spellings, p.marker_spellings.len)]) |m| if (std.mem.eql(u8, m, s)) return;
+        if (p.n_marker_spellings < p.marker_spellings.len) p.marker_spellings[p.n_marker_spellings] = s;
+        p.n_marker_spellings += 1;
+    }
 
     pub fn missingCount(p: *const PerTable, kind: Kind) usize {
         return switch (kind) {
@@ -167,6 +177,8 @@ pub const Options = struct {
     row_hash_mask: u64 = std.math.maxInt(u64),
     /// Run M5's train-vs-test classifier (seconds on large files).
     adversarial: bool = true,
+    /// What makes two spellings one level (M3).
+    fold: strings.Fold = .case,
 };
 
 pub const Analysis = struct {
@@ -182,6 +194,7 @@ pub const Analysis = struct {
     // Filled by the milestone passes; empty until each is built.
     target_rates: []const target_rate.Feature = &.{},
     target_mode: target_rate.TargetMode = .none,
+    spelling_groups: []const strings.Group = &.{},
     signal: []const signal.Score = &.{},
     signal_task: signal.Task = .binary,
     /// The target's lag-1 dependence in train's file order (M2).
@@ -208,13 +221,8 @@ pub const Analysis = struct {
     }
 };
 
-const missing_markers = [_][]const u8{ "na", "n/a", "#n/a", "nan", "null", "none", "nil", "?" };
-
-pub fn isMarker(s: []const u8) bool {
-    if (s.len > 4) return false;
-    for (missing_markers) |m| if (std.ascii.eqlIgnoreCase(s, m)) return true;
-    return false;
-}
+/// Missing-value markers (NA, N/A, null, …), matched on base form (M3).
+pub const isMarker = strings.isMarker;
 
 pub fn trim(s: []const u8) []const u8 {
     return std.mem.trim(u8, s, " \t\r\n");
@@ -386,7 +394,7 @@ fn typeColumn(cx: Ctx, c: *Column) !void {
         var p: PerTable = .{ .src = ci, .n = t.n_rows };
         switch (c.kind) {
             .numeric => try fillNumeric(cx.arena, t, &p),
-            .categorical => try fillCategorical(cx.arena, c, &index, t, &p),
+            .categorical => try fillCategorical(cx.arena, c, &index, cx.opts.fold, t, &p),
             .empty => for (t.cols[ci], 0..) |raw, r| {
                 if (trim(raw).len == 0) p.empty += 1 else p.markers += 1;
                 if (trim(raw).len != raw.len) p.padded.add(t.records[r]);
@@ -408,7 +416,7 @@ fn fillNumeric(arena: std.mem.Allocator, t: *const Table, p: *PerTable) !void {
         v.* = std.math.nan(f64);
         switch (classify(s)) {
             .empty => p.empty += 1,
-            .marker => p.markers += 1,
+            .marker => p.noteMarker(s),
             .text => {
                 if (p.junk.count < p.junk_sample.len) p.junk_sample[p.junk.count] = s;
                 p.junk.add(t.records[r]);
@@ -434,11 +442,6 @@ fn fillNumeric(arena: std.mem.Allocator, t: *const Table, p: *PerTable) !void {
     std.mem.sort(f64, p.sorted, {}, std.sort.asc(f64));
 }
 
-/// Lowercase into `buf`, or into the arena when it does not fit.
-fn fold(arena: std.mem.Allocator, buf: []u8, s: []const u8) ![]const u8 {
-    if (s.len <= buf.len) return std.ascii.lowerString(buf[0..s.len], s);
-    return std.ascii.allocLowerString(arena, s);
-}
 
 /// Level ids for a categorical column, shared across files. Spellings that
 /// differ only in case are one level, written with the most frequent spelling.
@@ -459,7 +462,7 @@ fn buildLevels(cx: Ctx, c: *Column) !LevelIndex {
     var by_fold: LevelIndex = .empty;
     var buf: [256]u8 = undefined;
     for (counts.keys()) |s| {
-        const key = try arena.dupe(u8, try fold(arena, &buf, s));
+        const key = try arena.dupe(u8, try strings.key(arena, &buf, s, cx.opts.fold));
         const gop = try by_fold.getOrPut(arena, key);
         if (!gop.found_existing) gop.value_ptr.* = .empty;
         try gop.value_ptr.append(arena, s);
@@ -484,7 +487,7 @@ fn buildLevels(cx: Ctx, c: *Column) !LevelIndex {
 /// Folded spelling → its spellings; the entry's index is the level id.
 const LevelIndex = std.array_hash_map.String(std.ArrayList([]const u8));
 
-fn fillCategorical(arena: std.mem.Allocator, c: *const Column, index: *const LevelIndex, t: *const Table, p: *PerTable) !void {
+fn fillCategorical(arena: std.mem.Allocator, c: *const Column, index: *const LevelIndex, fold_mode: strings.Fold, t: *const Table, p: *PerTable) !void {
     p.cat = try arena.alloc(u32, t.n_rows);
     p.level_counts = try arena.alloc(usize, c.levels.len);
     @memset(p.level_counts, 0);
@@ -497,8 +500,8 @@ fn fillCategorical(arena: std.mem.Allocator, c: *const Column, index: *const Lev
             v.* = no_level;
             continue;
         }
-        if (isMarker(s)) p.markers += 1;
-        const idx = index.getIndex(try fold(arena, &buf, s)) orelse unreachable; // zsnag:ok every spelling was indexed
+        if (isMarker(s)) p.noteMarker(s);
+        const idx = index.getIndex(try strings.key(arena, &buf, s, fold_mode)) orelse unreachable; // zsnag:ok every spelling was indexed
         v.* = @intCast(idx);
         p.level_counts[idx] += 1;
     }
@@ -559,8 +562,16 @@ fn columnFindings(cx: Ctx, c: *const Column) !void {
             const sev: Severity = if (c.use == .feature or role == .@"test") .info else .err;
             try cx.add(sev, .missing, role, name, "{d} missing ({d:.2}%): {d} empty, {d} markers, {d} junk, {d} non-finite", .{ miss, pct(miss, p.n), p.empty, if (c.kind == .numeric) p.markers else 0, p.junk.count, p.nonfinite });
         }
-        if (c.kind == .numeric and p.markers > 0 and p.empty > 0)
-            try cx.add(.warn, .mixed_missing, role, name, "missing values are spelled two ways: {d} empty and {d} as markers (clean writes all as empty)", .{ p.empty, p.markers });
+        // Two or more spellings of "missing" in one column: empty plus a
+        // marker, or two markers (deepchecks' mixed_nulls).
+        if (c.kind == .numeric and p.n_marker_spellings + @intFromBool(p.empty > 0) > 1) {
+            var list: std.ArrayList(u8) = .empty;
+            if (p.empty > 0) try list.print(cx.arena, "{d} empty", .{p.empty});
+            for (p.marker_spellings[0..@min(p.n_marker_spellings, p.marker_spellings.len)], 0..) |m, i|
+                try list.print(cx.arena, "{s}\"{s}\"", .{ if (i > 0 or p.empty > 0) ", " else "", m });
+            if (p.n_marker_spellings > p.marker_spellings.len) try list.print(cx.arena, ", … {d} more", .{p.n_marker_spellings - p.marker_spellings.len});
+            try cx.add(.warn, .mixed_missing, role, name, "missing values are spelled {d} ways — {s} — in {d} rows (clean writes all as empty)", .{ p.n_marker_spellings + @intFromBool(p.empty > 0), list.items, p.empty + p.markers });
+        }
         if (c.kind == .categorical and p.markers > 0)
             try cx.add(.warn, .marker_level, role, name, "{d} values look like missing markers (NA, null, …) but are kept as a level: in a text column they may be real categories", .{p.markers});
         if (p.padded.count > 0)
@@ -578,7 +589,7 @@ fn columnFindings(cx: Ctx, c: *const Column) !void {
         try cx.add(.warn, .nonint, null, name, "mostly whole numbers, but {d} values have a fractional part", .{nonint_total});
 
     if (c.kind == .categorical) for (c.spellings, c.levels) |sp, lvl| if (sp.len > 1)
-        try cx.add(.warn, .case_variants, null, name, "\"{s}\" is spelled {d} ways ({f}); clean writes \"{s}\"", .{ lvl, sp.len, fmtList(sp), lvl });
+        try cx.add(.warn, .case_variants, null, name, "\"{s}\" is spelled {d} ways ({f}); they are one level, and clean writes \"{s}\"", .{ lvl, sp.len, fmtList(sp), lvl });
 
     if (c.use != .feature) return;
     const train = c.at(.train) orelse return;
@@ -624,7 +635,7 @@ fn compareToTrain(cx: Ctx, c: *const Column, train: *const PerTable, other: *con
             for (other.level_counts, train.level_counts, c.levels) |k, kt, lvl| if (k > 0 and kt == 0) {
                 n_unseen += 1;
                 rows_unseen += k;
-                if (n_unseen <= 5) try unseen.print(cx.arena, "{s}\"{s}\" ×{d}", .{ if (n_unseen > 1) ", " else "", lvl, k });
+                if (n_unseen <= 5) try unseen.print(cx.arena, "{s}\"{f}\" ×{d}", .{ if (n_unseen > 1) ", " else "", strings.visible(lvl), k });
             };
             if (n_unseen > 0)
                 try cx.add(if (role == .@"test") .warn else .info, .unseen_levels, role, c.name, "{d} levels never seen in train, {d} rows: {s}", .{ n_unseen, rows_unseen, unseen.items });
@@ -656,7 +667,7 @@ fn fmtSamples(p: *const PerTable) []const []const u8 {
 const ListFmt = struct {
     items: []const []const u8,
     pub fn format(l: ListFmt, w: *std.Io.Writer) std.Io.Writer.Error!void {
-        for (l.items, 0..) |s, i| try w.print("{s}\"{s}\"", .{ if (i > 0) ", " else "", s });
+        for (l.items, 0..) |s, i| try w.print("{s}\"{f}\"", .{ if (i > 0) ", " else "", strings.visible(s) });
     }
 };
 
