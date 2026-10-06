@@ -69,6 +69,7 @@ pub const Code = enum {
     submission,
     // milestone passes (docs/PLAN.md)
     pure_rate, // M1
+    informative_missing, // M1
     signal, // M2
     leak, // M2
     spelling_variants, // M3
@@ -541,6 +542,8 @@ fn schemaFindings(cx: Ctx) !void {
 
 // ----------------------------------------------------------- column checks
 
+const missing_warn_pct = 5.0;
+
 fn pct(part: usize, whole: usize) f64 {
     if (whole == 0) return 0;
     return 100.0 * @as(f64, @floatFromInt(part)) / @as(f64, @floatFromInt(whole));
@@ -559,7 +562,11 @@ fn columnFindings(cx: Ctx, c: *const Column) !void {
         const role: Role = @enumFromInt(ri);
         const miss = p.missingCount(c.kind);
         if (miss > 0) {
-            const sev: Severity = if (c.use == .feature or role == .@"test") .info else .err;
+            // A feature's missing values are a note up to 5% of a file and a
+            // warning past it (deepchecks' percent_of_nulls default; ydata
+            // alerts from 1%). A missing id or train target is an error.
+            const heavy = pct(miss, p.n) > missing_warn_pct;
+            const sev: Severity = if (c.use == .feature or role == .@"test") (if (heavy) .warn else .info) else .err;
             try cx.add(sev, .missing, role, name, "{d} missing ({d:.2}%): {d} empty, {d} markers, {d} junk, {d} non-finite", .{ miss, pct(miss, p.n), p.empty, if (c.kind == .numeric) p.markers else 0, p.junk.count, p.nonfinite });
         }
         // Two or more spellings of "missing" in one column: empty plus a

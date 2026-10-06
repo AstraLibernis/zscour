@@ -367,6 +367,7 @@ pub fn run(cx: an.Ctx) !void {
                     try cx.add(.info, .pure_rate, .train, c.name, "{s} = {s} ({d} rows, {d:.1}% of train) is {d:.0}% {s}", .{ c.name, row.label, row.train_count, 100 * row.train_share, 100 * rate, mode.binary.label });
             };
         }
+        if (c.use == .feature and y_train != null) try informativeMissing(cx, c, &l, sums, labelled, y_ss, mode);
         try out.append(cx.arena, .{ .column = ci, .rows = rows.items, .binned = l.binned, .eta2 = eta2 });
     }
     if (y_train != null) std.mem.sort(Feature, out.items, {}, moreExplained);
@@ -377,6 +378,39 @@ pub fn run(cx: an.Ctx) !void {
 /// Highest η² first; columns without one (the target) after, in file order.
 fn moreExplained(_: void, x: Feature, y: Feature) bool {
     return (x.eta2 orelse -1) > (y.eta2 orelse -1);
+}
+
+/// Missingness is informative when the rows missing this feature differ in
+/// target from the rest by at least `informative_d` standard deviations of
+/// the target, at z ≥ `informative_z`, with ≥ `pure_min_rows` on each side.
+const informative_d = 0.05;
+const informative_z = 5;
+
+fn informativeMissing(cx: an.Ctx, c: *const an.Column, l: *const Layout, sums: []const [2]f64, labelled: []const [2]usize, y_ss: f64, mode: TargetMode) !void {
+    var mi: ?usize = null;
+    for (l.kinds.items, 0..) |k, i| if (k == .missing) {
+        mi = i;
+    };
+    const m = mi orelse return;
+    var n_all: f64 = 0;
+    var s_all: f64 = 0;
+    for (sums, labelled) |sm, k| {
+        n_all += @floatFromInt(k[0]);
+        s_all += sm[0];
+    }
+    const nm: f64 = @floatFromInt(labelled[m][0]);
+    const nr = n_all - nm;
+    if (nm < pure_min_rows or nr < pure_min_rows or y_ss <= 0) return;
+    const mean_m = sums[m][0] / nm;
+    const mean_r = (s_all - sums[m][0]) / nr;
+    const sd = @sqrt(y_ss / (n_all - 1));
+    const d = @abs(mean_m - mean_r) / sd;
+    const z = (mean_m - mean_r) / (sd * @sqrt(1 / nm + 1 / nr));
+    if (d < informative_d or @abs(z) < informative_z) return;
+    switch (mode) {
+        .binary => |b| try cx.add(.info, .informative_missing, .train, c.name, "rows missing {s} are {d:.1}% {s}, against {d:.1}% elsewhere (z {d:.1}): being missing carries signal — keep a missing indicator rather than imputing it away", .{ c.name, 100 * mean_m, b.label, 100 * mean_r, z }),
+        else => try cx.add(.info, .informative_missing, .train, c.name, "rows missing {s} have a target mean of {d:.4}, against {d:.4} elsewhere (z {d:.1}): being missing carries signal — keep a missing indicator rather than imputing it away", .{ c.name, mean_m, mean_r, z }),
+    }
 }
 
 fn share(k: usize, n: usize) f64 {
@@ -681,4 +715,51 @@ test "features rank by η², the section honours its limit, a 0/1 target is name
     try write(&buf.writer, &a, 1);
     try testing.expect(std.mem.find(u8, buf.written(), "weak") == null);
     try testing.expect(std.mem.find(u8, buf.written(), "1 more features") != null);
+}
+
+test "informative missing: flagged when missing rows differ in target, silent when random" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    for ([_]bool{ true, false }) |informative| {
+        var csv: std.ArrayList(u8) = .empty;
+        try csv.appendSlice(arena, "id,x,y\n");
+        for (0..4000) |i| {
+            const missing = i % 5 == 0;
+            // Informative: missing rows (i % 10 is 0 or 5) are all positive;
+            // the rest (i % 10 in 1–4, 6–9) are 3 of 8 = 37.5% positive.
+            // Random: everyone 50/50 by a pattern unrelated to `missing`.
+            const y = if (informative) (if (missing) i % 10 < 8 else i % 10 < 4) else (i / 5) % 2 == 0;
+            if (missing) try csv.print(arena, "{d},,{d}\n", .{ i, @intFromBool(y) }) else try csv.print(arena, "{d},{d},{d}\n", .{ i, i % 37, @intFromBool(y) });
+        }
+        const a = try analyzed(arena, csv.items, null);
+        var n: usize = 0;
+        for (a.findings.items) |f| n += @intFromBool(f.code == .informative_missing);
+        try testing.expectEqual(@as(usize, @intFromBool(informative)), n);
+        if (informative) for (a.findings.items) |f| if (f.code == .informative_missing)
+            try testing.expect(std.mem.find(u8, f.msg, "are 100.0% 1, against 37.5% elsewhere") != null);
+        // 20% missing is past the 5% line: a warning, not a note.
+        var sev: ?an.Severity = null;
+        for (a.findings.items) |f| if (f.code == .missing) {
+            sev = f.sev;
+        };
+        try testing.expectEqual(an.Severity.warn, sev.?);
+    }
+}
+
+test "informative missing: a large difference on few rows is not enough" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var csv: std.ArrayList(u8) = .empty;
+    try csv.appendSlice(arena, "id,x,y\n");
+    // 40 missing rows at 60% vs 160 present at 45%: 0.3 standard deviations
+    // apart, but z ≈ 1.7 — chance.
+    for (0..200) |i| {
+        const missing = i < 40;
+        const y = if (missing) i % 10 < 6 else (i - 40) % 20 < 9;
+        if (missing) try csv.print(arena, "{d},,{d}\n", .{ i, @intFromBool(y) }) else try csv.print(arena, "{d},{d},{d}\n", .{ i, i % 7, @intFromBool(y) });
+    }
+    const a = try analyzed(arena, csv.items, null);
+    for (a.findings.items) |f| try testing.expect(f.code != .informative_missing);
 }

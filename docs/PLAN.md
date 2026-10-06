@@ -80,6 +80,16 @@ As built (differences from the first draft of this plan in **bold**):
 - Tests: 14 in `target_rate.zig` + 2 in `bars.zig`; 21 mutations, all killed
   except one equivalent mutant (`clamp(i,1,n)−1` ≡ `min(i,n) −| 1`).
 
+Added after M3, prompted by the owner's question about a 16%-missing column:
+- **Missing share sets severity**: a feature's missing values are a note up
+  to 5% of a file and a warning past it (deepchecks' `percent_of_nulls`
+  default; ydata-profiling alerts from 1%).
+- **Informative missingness** (`informative_missing`, note): the rows missing
+  a feature differ in target from the rest by ≥ 0.05 standard deviations of
+  the target at |z| ≥ 5, with ≥ 30 rows each side → "keep a missing
+  indicator rather than imputing it away". Random missingness stays quiet
+  (tested, and on the generated messy dataset).
+
 Known gaps, for later milestones:
 - Multiclass targets get no rate. Per-class rates (one column per class, or
   the majority class per row) would fit here.
