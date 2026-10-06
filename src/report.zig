@@ -8,6 +8,11 @@ const an = @import("analyze.zig");
 const Analysis = an.Analysis;
 const Column = an.Column;
 const Role = @import("table.zig").Role;
+const drift = @import("drift.zig");
+const target_rate = @import("target_rate.zig");
+const signal = @import("signal.zig");
+const adversarial = @import("adversarial.zig");
+const assoc = @import("assoc.zig");
 
 const Writer = std.Io.Writer;
 
@@ -23,6 +28,12 @@ pub fn write(w: *Writer, a: *const Analysis) Writer.Error!void {
     var width: usize = 6;
     for (a.columns) |c| width = @max(width, c.name.len);
     for (a.columns) |*c| try columnLine(w, c, width);
+
+    // Milestone sections (docs/PLAN.md); each prints nothing until built.
+    try target_rate.write(w, a);
+    try signal.write(w, a);
+    try adversarial.write(w, a);
+    try assoc.write(w, a);
 
     for ([_]an.Severity{ .err, .warn, .info }) |sev| {
         const n = a.count(sev);
@@ -89,8 +100,8 @@ fn columnLine(w: *Writer, c: *const Column, width: usize) Writer.Error!void {
     if (c.use != .id) if (c.at(.train)) |train| for ([_]Role{ .@"test", .extra }) |r| {
         const o = c.at(r) orelse continue;
         const d = switch (c.kind) {
-            .numeric => an.ks(train.sorted, o.sorted),
-            .categorical => an.tvd(train.level_counts, o.level_counts),
+            .numeric => drift.ks(train.sorted, o.sorted),
+            .categorical => drift.tvd(train.level_counts, o.level_counts),
             .empty => continue,
         };
         try w.print("   {s} {s} {d:.4}", .{ if (c.kind == .numeric) "KS" else "TV", r.label(), d });

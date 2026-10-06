@@ -25,6 +25,7 @@ const usage =
     \\  --id NAME        id column (default: id)
     \\  --target NAME    target column (default: the train column test lacks)
     \\  --shift X        flag train/test KS or total variation above X (default 0.02)
+    \\  --no-adversarial skip the train-vs-test classifier
     \\  --out DIR        write cleaned train/test/extra and report.txt into DIR
     \\
 ;
@@ -41,6 +42,10 @@ fn parseArgs(arena: std.mem.Allocator, io: std.Io, argv: []const [:0]const u8) !
     while (i < argv.len) : (i += 1) {
         const arg: []const u8 = argv[i];
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) return error.Help;
+        if (std.mem.eql(u8, arg, "--no-adversarial")) {
+            args.opts.adversarial = false;
+            continue;
+        }
         if (!std.mem.startsWith(u8, arg, "--")) {
             try fromDir(arena, io, &args, arg);
             continue;
@@ -153,6 +158,16 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test {
+    _ = @import("drift.zig");
+    _ = @import("target_rate.zig");
+    _ = @import("signal.zig");
+    _ = @import("strings.zig");
+    _ = @import("discrete.zig");
+    _ = @import("adversarial.zig");
+    _ = @import("assoc.zig");
+    _ = @import("stats.zig");
+    _ = @import("bars.zig");
+    _ = @import("missingness.zig");
     _ = tbl;
     _ = an;
     _ = report;

@@ -46,6 +46,25 @@ many values each column had rewritten.
 Nothing is imputed, deduplicated or dropped for being an outlier: those are
 modelling decisions, and the report gives you the counts to make them.
 
+## Layout
+
+    src/main.zig         CLI
+    src/table.zig        bytes → raw table; file-level problems
+    src/analyze.zig      typed columns, core checks, runs every pass
+    src/report.zig       text report        src/clean.zig   --out files
+    src/drift.zig        KS, total variation (M9: PSI, Wasserstein, Cramér's V)
+    src/target_rate.zig  M1   src/signal.zig     M2   src/strings.zig  M3
+    src/discrete.zig     M4   src/adversarial.zig M5  src/assoc.zig    M6
+    src/stats.zig        M7   src/missingness.zig M8  src/bars.zig     drawing
+    src/vendor/zsift/    CSV parser (vendored)
+    docs/PLAN.md         milestones and the rules for finishing one
+    docs/prior-art.md    what is borrowed from whom, under which licence
+    docs/measurements.md timings
+    tools/mutate.sh      mutation check for the tests
+
+Modules marked M1–M9 are stubs until their milestone in
+[docs/PLAN.md](docs/PLAN.md) is done; their tests are skipped, not passing.
+
 ## Build
 
     zig build --release=fast      # zig 0.16; binary at zig-out/bin/zscour

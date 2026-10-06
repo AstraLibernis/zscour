@@ -8,8 +8,20 @@
 const std = @import("std");
 const tbl = @import("table.zig");
 const Table = tbl.Table;
-const Role = tbl.Role;
 const Examples = tbl.Examples;
+pub const Role = tbl.Role;
+
+// Milestone passes (docs/PLAN.md). Each has `run(Ctx)`; report sections
+// render from the fields they fill in `Analysis`.
+const drift = @import("drift.zig");
+const target_rate = @import("target_rate.zig");
+const signal = @import("signal.zig");
+const strings = @import("strings.zig");
+const discrete = @import("discrete.zig");
+const adversarial = @import("adversarial.zig");
+const assoc = @import("assoc.zig");
+const stats = @import("stats.zig");
+const missingness = @import("missingness.zig");
 
 pub const Severity = enum { err, warn, info };
 
@@ -55,6 +67,19 @@ pub const Code = enum {
     cross_duplicates,
     // submission
     submission,
+    // milestone passes (docs/PLAN.md)
+    pure_rate, // M1
+    signal, // M2
+    leak, // M2
+    spelling_variants, // M3
+    punctuation_only, // M3
+    discrete_numeric, // M4
+    adversarial, // M5
+    association, // M6
+    skew, // M7
+    imbalance, // M7
+    order, // M7
+    missing_together, // M8
 };
 
 pub const Finding = struct {
@@ -116,6 +141,8 @@ pub const Column = struct {
     kind: Kind,
     /// Every finite value in every file is a whole number.
     integral: bool = false,
+    /// Numeric with few distinct values; set by M4 (`discrete.zig`).
+    discrete: bool = false,
     /// Categorical: canonical spelling per level id (the most frequent one).
     levels: []const []const u8 = &.{},
     /// Categorical: every trimmed spelling folded into each level.
@@ -138,6 +165,8 @@ pub const Options = struct {
     /// Row hashes are ANDed with this. Tests set 0 so every row collides and
     /// row equality is decided by comparing values, never by the hash alone.
     row_hash_mask: u64 = std.math.maxInt(u64),
+    /// Run M5's train-vs-test classifier (seconds on large files).
+    adversarial: bool = true,
 };
 
 pub const Analysis = struct {
@@ -149,6 +178,14 @@ pub const Analysis = struct {
     /// the positive class, so `clean` can write 0/1.
     target_positive: ?u32 = null,
     findings: std.ArrayList(Finding) = .empty,
+
+    // Filled by the milestone passes; empty until each is built.
+    target_rates: []const target_rate.Feature = &.{},
+    signal: []const signal.Score = &.{},
+    adversarial: []const adversarial.Result = &.{},
+    associations: []const assoc.Pair = &.{},
+    column_stats: []const stats.Extra = &.{},
+    missing_together: []const missingness.Pair = &.{},
 
     pub fn table(a: *const Analysis, r: Role) ?*const Table {
         for (a.tables) |*t| if (t.role == r) return t;
@@ -183,12 +220,13 @@ pub fn trim(s: []const u8) []const u8 {
 /// fields parse as numbers; the rest are reported as junk.
 const numeric_share = 0.99;
 
-const Ctx = struct {
+/// What every check gets: the arena, the analysis it adds to, the options.
+pub const Ctx = struct {
     arena: std.mem.Allocator,
     a: *Analysis,
     opts: Options,
 
-    fn add(c: Ctx, sev: Severity, code: Code, t: ?Role, col: ?[]const u8, comptime fmt: []const u8, args: anytype) !void {
+    pub fn add(c: Ctx, sev: Severity, code: Code, t: ?Role, col: ?[]const u8, comptime fmt: []const u8, args: anytype) !void {
         const msg = try std.fmt.allocPrint(c.arena, fmt, args);
         try c.a.findings.append(c.arena, .{ .sev = sev, .code = code, .table = t, .column = col, .msg = msg });
     }
@@ -209,6 +247,15 @@ pub fn analyze(arena: std.mem.Allocator, tables: []const Table, opts: Options) !
     try targetFindings(cx);
     try rowFindings(cx);
     try submissionFindings(cx);
+
+    try strings.run(cx);
+    try discrete.run(cx);
+    try target_rate.run(cx);
+    try signal.run(cx);
+    if (opts.adversarial) try adversarial.run(cx);
+    try assoc.run(cx);
+    try stats.run(cx);
+    try missingness.run(cx);
     return a;
 }
 
@@ -562,7 +609,7 @@ fn compareToTrain(cx: Ctx, c: *const Column, train: *const PerTable, other: *con
             }
             if (below + above > 0)
                 try cx.add(.info, .out_of_range, role, c.name, "{d} values outside train's range [{d}, {d}] ({d} below, {d} above)", .{ below + above, lo, hi, below, above });
-            const d = ks(train.sorted, other.sorted);
+            const d = drift.ks(train.sorted, other.sorted);
             if (d > cx.opts.shift_warn)
                 try cx.add(sev_shift, .shift, role, c.name, "distribution differs from train: KS = {d:.4}", .{d});
         },
@@ -577,7 +624,7 @@ fn compareToTrain(cx: Ctx, c: *const Column, train: *const PerTable, other: *con
             };
             if (n_unseen > 0)
                 try cx.add(if (role == .@"test") .warn else .info, .unseen_levels, role, c.name, "{d} levels never seen in train, {d} rows: {s}", .{ n_unseen, rows_unseen, unseen.items });
-            const d = tvd(train.level_counts, other.level_counts);
+            const d = drift.tvd(train.level_counts, other.level_counts);
             if (d > cx.opts.shift_warn)
                 try cx.add(sev_shift, .shift, role, c.name, "level mix differs from train: total variation = {d:.4}", .{d});
         },
@@ -596,37 +643,6 @@ fn nonzero(xs: []const usize) usize {
     var n: usize = 0;
     for (xs) |x| n += @intFromBool(x > 0);
     return n;
-}
-
-/// Two-sample Kolmogorov–Smirnov statistic over ascending samples.
-pub fn ks(a: []const f64, b: []const f64) f64 {
-    if (a.len == 0 or b.len == 0) return 0;
-    const na: f64 = @floatFromInt(a.len);
-    const nb: f64 = @floatFromInt(b.len);
-    var i: usize = 0;
-    var j: usize = 0;
-    var d: f64 = 0;
-    while (i < a.len and j < b.len) {
-        const x = @min(a[i], b[j]);
-        while (i < a.len and a[i] <= x) i += 1;
-        while (j < b.len and b[j] <= x) j += 1;
-        const fi: f64 = @floatFromInt(i);
-        const fj: f64 = @floatFromInt(j);
-        d = @max(d, @abs(fi / na - fj / nb));
-    }
-    return d;
-}
-
-/// Total variation distance between two level-count vectors.
-pub fn tvd(a: []const usize, b: []const usize) f64 {
-    var sa: usize = 0;
-    var sb: usize = 0;
-    for (a) |x| sa += x;
-    for (b) |x| sb += x;
-    if (sa == 0 or sb == 0) return 0;
-    var d: f64 = 0;
-    for (a, b) |x, y| d += @abs(@as(f64, @floatFromInt(x)) / @as(f64, @floatFromInt(sa)) - @as(f64, @floatFromInt(y)) / @as(f64, @floatFromInt(sb)));
-    return d / 2;
 }
 
 fn fmtSamples(p: *const PerTable) []const []const u8 {
@@ -1072,12 +1088,6 @@ test "schema: test missing a feature is an error" {
     try testing.expect(a.count(.err) >= 1);
 }
 
-test "ks and tvd" {
-    try testing.expectEqual(@as(f64, 0), ks(&.{ 1, 2, 3 }, &.{ 1, 2, 3 }));
-    try testing.expectEqual(@as(f64, 1), ks(&.{ 1, 2 }, &.{ 3, 4 }));
-    try testing.expectApproxEqAbs(@as(f64, 0.5), ks(&.{ 1, 2, 3, 4 }, &.{ 3, 4, 5, 6 }), 1e-12);
-    try testing.expectApproxEqAbs(@as(f64, 0.5), tvd(&.{ 1, 1 }, &.{ 1, 0 }), 1e-12);
-}
 
 test "-0 and 0 are one value for duplicate detection" {
     var f = Fixture.init();
