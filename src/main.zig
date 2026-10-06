@@ -26,7 +26,7 @@ const usage =
     \\  --id NAME        id column (default: id)
     \\  --target NAME    target column (default: the train column test lacks)
     \\  --shift X        flag train/test KS or total variation above X (default 0.02)
-    \\  --rates N        target-rate tables for the N features that explain most (default 20, 0 = all)
+    \\  --top N          features listed in the signal and target-rate sections (default 20, 0 = all)
     \\  --no-adversarial skip the train-vs-test classifier
     \\  --html FILE      write the report as a self-contained HTML page with charts
     \\  --out DIR        write cleaned train/test/extra, report.txt and report.html into DIR
@@ -38,7 +38,7 @@ const Args = struct {
     opts: an.Options = .{},
     out: ?[]const u8 = null,
     html: ?[]const u8 = null,
-    rate_features: usize = 20,
+    top: usize = 20,
 };
 
 fn parseArgs(arena: std.mem.Allocator, io: std.Io, argv: []const [:0]const u8) !Args {
@@ -72,8 +72,8 @@ fn parseArgs(arena: std.mem.Allocator, io: std.Io, argv: []const [:0]const u8) !
             args.opts.target = v;
         } else if (std.mem.eql(u8, arg, "--shift")) {
             args.opts.shift_warn = std.fmt.parseFloat(f64, v) catch return error.BadNumber;
-        } else if (std.mem.eql(u8, arg, "--rates")) {
-            args.rate_features = std.fmt.parseInt(usize, v, 10) catch return error.BadNumber;
+        } else if (std.mem.eql(u8, arg, "--top")) {
+            args.top = std.fmt.parseInt(usize, v, 10) catch return error.BadNumber;
         } else if (std.mem.eql(u8, arg, "--html")) {
             args.html = v;
         } else if (std.mem.eql(u8, arg, "--out")) {
@@ -138,7 +138,7 @@ pub fn main(init: std.process.Init) !void {
     const a = try an.analyze(arena, tables.items, args.opts);
 
     var text: std.Io.Writer.Allocating = .init(arena);
-    try report.write(&text.writer, &a, args.rate_features);
+    try report.write(&text.writer, &a, args.top);
 
     if (args.out) |dir_path| {
         const cwd = std.Io.Dir.cwd();

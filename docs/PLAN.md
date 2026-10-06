@@ -42,7 +42,7 @@ milestone ships its text and HTML sections together.
 | M0 | Well-formed data: bytes, records, header, schema, values, ids, target, duplicates, shift (KS/TV), submission; `--out` cleaning | `table` `analyze` `clean` `report` | **done** (78deabd) |
 | M1 | Target rate per level / per numeric bin, train vs test side by side | `target_rate` `bars` | **done** |
 | M1.5 | HTML report: self-contained page, charts per column, drift overview, findings | `html` | **done** |
-| M2 | Single-feature predictive power; id and row-order leak checks | `signal` | stub |
+| M2 | Single-feature predictive power; id and row-order leak checks | `signal` | **done** |
 | M3 | Base-form spelling match, punctuation-only values, null spellings | `strings` | stub |
 | M4 | Numeric columns that are really discrete/ordinal | `discrete` | stub |
 | M5 | Adversarial validation (train-vs-test classifier) via zarbor | `adversarial` | stub |
@@ -122,23 +122,40 @@ column search), nothing fetched — works offline. 169 KB for 23 columns;
   the data.
 - Tests: 8 in `html.zig`; 9 mutations, all killed.
 
-## M2 — single-feature signal and leaks
+## M2 — single-feature signal and leaks  ✓
 
 *Question: what predicts the target on its own, and does anything that
 should not?*
 
-- Per feature, a model-free predictive score in [0, 1]: predict the target
-  from that feature alone with a per-level (categorical) or per-quantile-bin
-  (numeric) majority class / mean, scored out-of-fold against the baseline
-  of always predicting the overall majority / mean. Binary targets also get
-  the feature's univariate AUC (Mann–Whitney rank sum). Ranked table.
-- The same score on the **id column** and on **row position** in train: any
-  real signal means the label leaks through ordering. Also the target's lag-1
-  autocorrelation in file order.
-- Findings: id/order signal above noise → err-level leak warning; a single
-  feature scoring ≥ 0.8 → warn (suspiciously strong).
-- Tests: planted leak (target sorted by id) is caught; shuffled is not;
-  scores match a hand computation; AUC = 0.5 on noise, 1 on a perfect split.
+As built:
+
+- Per column, out-of-fold power in [0, 1] from a lookup model: each train
+  row is predicted from the other 3 folds' rows in the same level, value or
+  bin (M1's layout at 1 024 levels / 64 equal-count bins; folds by a hash of
+  the row number). Computed from per-(group, fold) totals in one pass.
+  - binary target: 2·AUC − 1 (AUC from tie-aware group sums; z against 0.5)
+  - numeric target: out-of-fold R²
+  - multiclass (≤ 64 classes): (accuracy − majority share) / (1 − majority
+    share), ppscore's normalisation
+- Leak checks, the same score on: the **id column** (deepchecks'
+  identifier–label idea), **row position** (64 equal blocks of the file),
+  and the target's **lag-1 autocorrelation** in file order (multiclass:
+  same-class excess over Σp², z by normal approximation). A leak needs power
+  ≥ 0.01 *and*, where a null is known, z ≥ 5.
+- Findings: a feature at power ≥ 0.8 → warn (deepchecks' PPS threshold);
+  any leak → warn. Nothing is reported below 100 labelled train rows (a
+  3-row file "predicted the target almost alone").
+- M1's tables now follow this ranking instead of in-sample η², which closes
+  M1's known gap: a 1-level-per-2-rows column scores ~0 here.
+- Text section (`--top N`, shared with M1) and an HTML section: ranked bars,
+  the leak checks under their own label, the autocorrelation line, a table.
+- Checked at scale: the airline train sorted by its target flags row position
+  (power 0.9998) and the autocorrelation (z 836); its ids, moved with the
+  rows, are correctly not flagged.
+- Tests: 9 in `signal.zig`; 13 mutations, all killed after three fixture
+  fixes (a zero-mean target hid a wrong R² denominator; no fixture punished
+  in-fold multiclass scoring; none separated power from z in the leak rule).
+- Cost: +0.16 s on the airline run (1.82 → 1.98 s).
 
 ## M3 — spelling variants beyond case
 

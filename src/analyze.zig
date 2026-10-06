@@ -183,6 +183,9 @@ pub const Analysis = struct {
     target_rates: []const target_rate.Feature = &.{},
     target_mode: target_rate.TargetMode = .none,
     signal: []const signal.Score = &.{},
+    signal_task: signal.Task = .binary,
+    /// The target's lag-1 dependence in train's file order (M2).
+    order: ?signal.Order = null,
     adversarial: []const adversarial.Result = &.{},
     associations: []const assoc.Pair = &.{},
     column_stats: []const stats.Extra = &.{},

@@ -19,6 +19,7 @@ const std = @import("std");
 const an = @import("analyze.zig");
 const drift = @import("drift.zig");
 const target_rate = @import("target_rate.zig");
+const signal = @import("signal.zig");
 const Analysis = an.Analysis;
 const Column = an.Column;
 const Role = an.Role;
@@ -139,8 +140,10 @@ const script =
 
 pub fn write(w: *Writer, a: *const Analysis, opts: an.Options) Writer.Error!void {
     try w.writeAll("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">" ++
-        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" ++
-        "<title>zscour report</title><style>" ++ css ++ "</style></head><body><main>\n");
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>zscour · ");
+    // Name the tab after the data, so several reports can be told apart.
+    try esc(w, if (a.tables.len > 0) a.tables[0].path else "report");
+    try w.writeAll("</title><style>" ++ css ++ "</style></head><body><main>\n");
 
     try w.writeAll("<header><div><h1>zscour report</h1><p class=\"sub\">");
     for (a.tables, 0..) |t, i| {
@@ -152,6 +155,7 @@ pub fn write(w: *Writer, a: *const Analysis, opts: an.Options) Writer.Error!void
 
     try tiles(w, a);
     try findings(w, a);
+    try signalSection(w, a);
     try driftSection(w, a, opts);
     try columns(w, a);
 
@@ -390,6 +394,98 @@ fn driftChart(w: *Writer, a: *const Analysis, role: Role, threshold: f64) Writer
     try w.writeAll("</svg></div></div>");
 }
 
+// -------------------------------------------------------------------- signal
+
+const signal_rows_max = 40;
+
+/// M2: features ranked by out-of-fold power, then the id and row-position
+/// checks, then file-order autocorrelation.
+fn signalSection(w: *Writer, a: *const Analysis) Writer.Error!void {
+    if (a.signal.len == 0) return;
+    var n_features: usize = 0;
+    for (a.signal) |sc| n_features += @intFromBool(sc.subject == .feature);
+    const shown_features = @min(n_features, signal_rows_max);
+    const n_checks = a.signal.len - n_features;
+    const rows = shown_features + n_checks;
+
+    try w.writeAll("<h2>What predicts the target on its own</h2><div class=\"cards\"><div class=\"card\"><p class=\"meta\">");
+    try w.print("Each column predicts the target alone, out of fold ({d} folds): every train row is predicted from the other folds' rows with the same level, value or bin. ", .{signal.folds});
+    try w.writeAll(switch (a.signal_task) {
+        .binary => "Power = 2·AUC − 1: 0 = no better than chance, 1 = perfect.",
+        .regression => "Power = out-of-fold R²: the share of the target's variance predicted.",
+        .multiclass => "Power = accuracy gained over always guessing the most common class, as a share of what was left to gain.",
+    });
+    try w.writeAll(" The id column and row position below should score 0; when they don't, the target leaks through the order of the file.");
+    if (shown_features < n_features) try w.print(" Largest {d} of {d} features.", .{ shown_features, n_features });
+    try w.writeAll("</p>");
+
+    var top: f64 = 0;
+    for (a.signal) |sc| top = @max(top, sc.power);
+    top = @min(1.0, niceCeil(@max(top, 0.05)));
+    const row_h = 18.0;
+    const sep = 22.0;
+    const plot_x = label_w + 8;
+    const plot_w = chart_w - plot_x - pad_r - 70;
+    const h = top_pad + @as(f64, @floatFromInt(rows)) * row_h + sep + bottom_pad;
+    try w.print("<div class=\"chart\"><svg viewBox=\"0 0 {d} {d:.0}\" role=\"img\" aria-label=\"Predictive power of each column on its own\">", .{ chart_w, h });
+    for ([_]f64{ 0, 0.5, 1 }) |f| {
+        const x = plot_x + f * plot_w;
+        try w.print("<line class=\"{s}\" x1=\"{d:.1}\" x2=\"{d:.1}\" y1=\"{d}\" y2=\"{d:.1}\"/>", .{ if (f == 0) "base" else "grid", x, x, top_pad - 4, h - bottom_pad });
+        var buf: [16]u8 = undefined;
+        try w.print("<text class=\"tick\" x=\"{d:.1}\" y=\"{d:.1}\" text-anchor=\"{s}\">{s}</text>", .{ x, h - 8, anchor(f), numText(&buf, f * top) });
+    }
+    // The leak checks sit below a gap, under their own label.
+    const checks_y = top_pad + @as(f64, @floatFromInt(shown_features)) * row_h + sep;
+    try w.print("<text class=\"tick\" x=\"{d}\" y=\"{d:.1}\" text-anchor=\"end\">leak checks · should be 0</text>", .{ label_w, checks_y - 2 });
+    var i: usize = 0;
+    var features_drawn: usize = 0;
+    for (a.signal) |sc| {
+        if (sc.subject == .feature) {
+            if (features_drawn == shown_features) continue;
+            features_drawn += 1;
+        }
+        const offset: f64 = if (sc.subject == .feature) 0 else sep;
+        const y = top_pad + @as(f64, @floatFromInt(i)) * row_h + offset;
+        i += 1;
+        const name = if (sc.column) |ci| a.columns[ci].name else "row position";
+        const leak = sc.subject != .feature and signal.isLeak(sc);
+        try w.writeAll("<g class=\"row\"><title>");
+        try esc(w, name);
+        try w.print(": power {d:.4}", .{sc.power});
+        if (sc.auc) |v| try w.print(", AUC {d:.4}, z {d:.1}", .{ v, sc.z.? });
+        if (leak) try w.writeAll(" — leak");
+        try w.print("</title><rect class=\"hit\" x=\"0\" y=\"{d:.1}\" width=\"{d}\" height=\"{d}\"/>", .{ y, chart_w, row_h });
+        try w.print("<text x=\"{d}\" y=\"{d:.1}\" text-anchor=\"end\">", .{ label_w, y + 13 });
+        try truncLabel(w, name, 22);
+        try w.writeAll("</text>");
+        const len = @min(sc.power, top) / top * plot_w;
+        try hbar(w, plot_x, y + 4, len, 10, "var(--s-train)");
+        try w.print("<text class=\"tick{s}\" x=\"{d:.1}\" y=\"{d:.1}\">{d:.4}{s}{s}</text>", .{ if (leak) " flag" else "", plot_x + len + 6, y + 13, sc.power, if (sc.subject == .id) " · id column" else "", if (leak) " · leak" else "" });
+        try w.writeAll("</g>");
+    }
+    try w.writeAll("</svg></div>");
+    if (a.order) |o| {
+        const leak = @abs(o.stat) >= signal.leak_min and o.z >= signal.leak_z;
+        try w.print("<p class=\"meta\">File order: lag-1 {s} of the target {d:.4} (z {d:.1}){s}.</p>", .{
+            if (a.signal_task == .multiclass) "same-class excess" else "autocorrelation", o.stat, o.z,
+            if (leak) " — <strong>neighbouring rows share their target more than chance</strong>" else ", consistent with no ordering",
+        });
+    }
+    try w.writeAll("<details><summary>Table</summary><table><thead><tr><th>column</th><th>power</th>");
+    if (a.signal_task == .binary) try w.writeAll("<th>AUC</th><th>z</th>");
+    try w.writeAll("</tr></thead><tbody>");
+    for (a.signal) |sc| {
+        const name = if (sc.column) |ci| a.columns[ci].name else "row position";
+        try w.writeAll("<tr><td>");
+        try esc(w, name);
+        if (sc.subject == .id) try w.writeAll(" (id column)");
+        try w.print("</td><td>{d:.4}</td>", .{sc.power});
+        if (a.signal_task == .binary) try w.print("<td>{d:.4}</td><td>{d:.1}</td>", .{ sc.auc orelse 0.5, sc.z orelse 0 });
+        try w.writeAll("</tr>");
+    }
+    try w.writeAll("</tbody></table></details></div></div>\n");
+}
+
 // ------------------------------------------------------------------- columns
 
 fn columns(w: *Writer, a: *const Analysis) Writer.Error!void {
@@ -402,12 +498,12 @@ fn columns(w: *Writer, a: *const Analysis) Writer.Error!void {
             try esc(w, a.columns[a.target.?].name);
             try w.writeAll(" = ");
             try esc(w, b.label);
-            try w.writeAll(" (dots; the line is the overall rate). Features are ordered by η², the share of the target's variance their rows explain.</p>");
+            try w.writeAll(" (dots; the line is the overall rate). Features are in the order of the signal ranking above.</p>");
         },
         .mean => {
             try w.writeAll("<p class=\"sub\">Left: share of each file's rows per level, value or bin. Right: mean ");
             try esc(w, a.columns[a.target.?].name);
-            try w.writeAll(" per row (dots; the line is the overall mean). Features are ordered by η².</p>");
+            try w.writeAll(" per row (dots; the line is the overall mean). Features are in the order of the signal ranking above.</p>");
         },
         .none => {},
     }
@@ -447,6 +543,7 @@ fn card(w: *Writer, a: *const Analysis, ci: usize) Writer.Error!void {
         .empty => try w.writeAll("<span class=\"badge\">empty</span>"),
     }
     const f = featureOf(a, ci);
+    for (a.signal) |sc| if (sc.column == ci) try w.print("<span class=\"badge\">power {d:.4}</span>", .{sc.power});
     if (f) |ft| if (ft.eta2) |e| try w.print("<span class=\"badge\">η² {d:.4}</span>", .{e});
     try w.writeAll("</div><div class=\"meta\">missing ");
     var first = true;
@@ -707,9 +804,9 @@ test "one chart per column with rows, rate panel only with a target, table view 
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const with_target = try render(arena, "id,x,c,y\n0,1.5,a,1\n1,2.5,b,0\n2,3,a,1\n", "id,x,c\n3,2,b\n");
-    // Charts: x, c, y (target) plus the drift chart.
-    try testing.expectEqual(@as(usize, 4), std.mem.count(u8, with_target, "<svg "));
-    try testing.expectEqual(@as(usize, 3), std.mem.count(u8, with_target, "<summary>Table</summary>"));
+    // Charts: x, c, y (target), the drift chart and the signal chart.
+    try testing.expectEqual(@as(usize, 5), std.mem.count(u8, with_target, "<svg "));
+    try testing.expectEqual(@as(usize, 4), std.mem.count(u8, with_target, "<summary>Table</summary>"));
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, with_target, ">target rate</text>"));
     const no_target = try render(arena, "id,x\n0,1\n1,2\n", null);
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, no_target, "<svg "));

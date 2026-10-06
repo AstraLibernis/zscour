@@ -8,6 +8,7 @@ names the project and the original file, and this page lists it.
 |---|---|---|---|
 | [ydata-profiling](https://github.com/ydataai/ydata-profiling) | MIT, © 2016 Jos Polfliet, 2019–2021 Simon Brugman, 2022– YData Labs Inc | `98b1aba` (2026-09-11) | alert thresholds, column statistics, imbalance score, nullity correlation, Cramér's V, histogram binning |
 | [sweetviz](https://github.com/fbdesignpro/sweetviz) | MIT, © 2020 fbdesignpro | `4697e18` (2026-04-11) | target rate per level/bin, side-by-side train/test layout, correlation ratio, Theil's U, discrete-numeric rule |
+| [ppscore](https://github.com/8080labs/ppscore) | MIT, © 2020 8080 Labs (Wetschoreck, Krabel, Krishnamurthy; doi:10.5281/zenodo.4091345) | 1.2.0, as vendored in deepchecks `ppscore.py` | the predictive power score: one-column model, out-of-fold, normalised against a naive baseline |
 | [deepchecks](https://github.com/deepchecks/deepchecks) | **AGPL-3.0**, © 2021–2023 Deepchecks | `98475d1` (2025-11-24) | ideas and published formulas only: adversarial validation, predictive power score, string base form, drift scores and binning |
 
 deepchecks is AGPL-3.0. zscour (GPL-3.0-or-later) takes from it only what is
@@ -28,7 +29,9 @@ each file normalised by its own n; top-N levels plus "Others"; the test-side
 `fillna` in `graph_numeric.py:146,207` applies to train's bins (a bug — don't
 copy it).
 
-**M2 predictive power** — deepchecks `ppscore.py`,
+**M2 predictive power** — verified 2026-10-06: `ppscore.py` in deepchecks is
+ppscore 1.2.0 (8080 Labs, **MIT**), not deepchecks' own AGPL code. deepchecks
+`ppscore.py`,
 `core/check_utils/feature_label_correlation_utils.py:79-149`,
 `tabular/checks/data_integrity/identifier_label_correlation.py:70-149`.
 Noted: per-feature single-feature tree, 4-fold CV, weighted F1 vs

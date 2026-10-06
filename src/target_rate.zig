@@ -80,7 +80,7 @@ pub const TargetMode = union(enum) {
 
 /// Per-row target as a number: 1/0 for a binary target, the value for a
 /// numeric one; NaN when missing. Null for a multiclass target.
-fn targetValues(cx: an.Ctx, role: Role, mode: TargetMode, positive: f64) !?[]const f64 {
+pub fn targetValues(cx: an.Ctx, role: Role, mode: TargetMode, positive: f64) !?[]const f64 {
     const a = cx.a;
     const c = &a.columns[a.target orelse return null];
     const p = c.at(role) orelse return null;
@@ -100,7 +100,7 @@ fn targetValues(cx: an.Ctx, role: Role, mode: TargetMode, positive: f64) !?[]con
 
 /// Decide the rate's meaning. `positive` is the positive class: a level id
 /// (categorical) or a value (numeric).
-fn targetMode(a: *const an.Analysis) struct { TargetMode, f64 } {
+pub fn targetMode(a: *const an.Analysis) struct { TargetMode, f64 } {
     const c = &a.columns[a.target orelse return .{ .none, 0 }];
     const train = c.at(.train) orelse return .{ .none, 0 };
     switch (c.kind) {
@@ -127,7 +127,7 @@ fn targetMode(a: *const an.Analysis) struct { TargetMode, f64 } {
 }
 
 /// How rows of one feature map to table rows.
-const Layout = struct {
+pub const Layout = struct {
     labels: std.ArrayList([]const u8) = .empty,
     kinds: std.ArrayList(RowKind) = .empty,
     binned: bool = false,
@@ -144,7 +144,7 @@ const Layout = struct {
         return @intCast(l.labels.items.len - 1);
     }
 
-    fn rowOf(l: *const Layout, c: *const an.Column, p: *const an.PerTable, r: usize) u32 {
+    pub fn rowOf(l: *const Layout, c: *const an.Column, p: *const an.PerTable, r: usize) u32 {
         switch (c.kind) {
             .categorical => {
                 const id = p.cat[r];
@@ -216,7 +216,14 @@ fn binEdges(arena: std.mem.Allocator, s: []const f64, max_bins: usize) !Edges {
     return .{ .edges = edges.items, .single = single.items };
 }
 
-fn layout(cx: an.Ctx, c: *const an.Column, train: *const an.PerTable) !Layout {
+/// Resolution of a layout: levels shown before the rest pool into "other",
+/// and the most bins (or distinct values shown one per row) for a numeric.
+pub const Resolution = struct { levels: usize, bins: usize };
+
+/// M1's resolution: one screen per feature.
+pub const report_resolution: Resolution = .{ .levels = max_rows, .bins = max_rows };
+
+pub fn layout(cx: an.Ctx, c: *const an.Column, train: *const an.PerTable, res: Resolution) !Layout {
     const arena = cx.arena;
     var l: Layout = .{};
     switch (c.kind) {
@@ -230,7 +237,7 @@ fn layout(cx: an.Ctx, c: *const an.Column, train: *const an.PerTable) !Layout {
                 }
             };
             std.mem.sort(u32, order, Ctx{ .counts = train.level_counts }, Ctx.more);
-            const shown = if (order.len <= max_rows) order.len else max_rows - 1;
+            const shown = if (order.len <= res.levels) order.len else res.levels - 1;
             l.level_row = try arena.alloc(u32, c.levels.len);
             for (order[0..shown]) |id| l.level_row[id] = try l.add(arena, .value, c.levels[id]);
             if (shown < order.len) {
@@ -244,10 +251,10 @@ fn layout(cx: an.Ctx, c: *const an.Column, train: *const an.PerTable) !Layout {
             var distinct: std.ArrayList(f64) = .empty;
             for (s, 0..) |x, i| {
                 if (i > 0 and x == s[i - 1]) continue;
-                if (distinct.items.len == max_rows) break;
+                if (distinct.items.len == res.bins) break;
                 try distinct.append(arena, x);
             }
-            const few = distinct.items.len < max_rows or s.len == 0 or s[s.len - 1] == distinct.items[distinct.items.len - 1];
+            const few = distinct.items.len < res.bins or s.len == 0 or s[s.len - 1] == distinct.items[distinct.items.len - 1];
             if (few) {
                 l.points = distinct.items;
                 for (distinct.items) |x| _ = try l.add(arena, .value, try fmtNum(arena, x));
@@ -255,7 +262,7 @@ fn layout(cx: an.Ctx, c: *const an.Column, train: *const an.PerTable) !Layout {
                 l.other_row = try l.add(arena, .other, "other values");
             } else {
                 l.binned = true;
-                const edges = try binEdges(arena, s, max_rows);
+                const edges = try binEdges(arena, s, res.bins);
                 l.points = edges.edges;
                 for (edges.edges[0 .. edges.edges.len - 1], edges.edges[1..], edges.single, 0..) |lo, hi, one, i| {
                     const last = i == edges.edges.len - 2;
@@ -301,7 +308,7 @@ pub fn run(cx: an.Ctx) !void {
     for (a.columns, 0..) |*c, ci| {
         if (c.use == .id or c.kind == .empty) continue;
         const train = c.at(.train) orelse continue;
-        var l = try layout(cx, c, train);
+        var l = try layout(cx, c, train, report_resolution);
         const n_rows = l.labels.items.len;
 
         const counts = try cx.arena.alloc([3]usize, n_rows); // train, test, extra
@@ -393,7 +400,7 @@ pub fn write(w: *std.Io.Writer, a: *const an.Analysis, limit: usize) std.Io.Writ
         .none => try w.print("   ({s} is multiclass: shares only)", .{target}),
     }
     try w.writeAll("\n   share bars are scaled to the largest row of each feature; rate bars to 0–100%");
-    if (a.target_mode != .none) try w.writeAll("\n   features ranked by η², the share of the target's variance their rows explain");
+    if (a.signal.len > 0) try w.writeAll("\n   features in the order of SINGLE-FEATURE SIGNAL; η² = share of the target's variance their rows explain, in sample");
     try w.writeAll("\n");
     var have_extra = false;
     for (a.target_rates) |f| for (f.rows) |r| {
@@ -442,7 +449,7 @@ pub fn write(w: *std.Io.Writer, a: *const an.Analysis, limit: usize) std.Io.Writ
         }
     }
     if (shown < features)
-        try w.print("\n  … {d} more features (--rates 0 shows all)\n", .{features - shown});
+        try w.print("\n  … {d} more features (--top 0 shows all)\n", .{features - shown});
 }
 
 // ------------------------------------------------------------------ tests

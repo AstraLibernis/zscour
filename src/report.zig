@@ -16,8 +16,8 @@ const assoc = @import("assoc.zig");
 
 const Writer = std.Io.Writer;
 
-/// `rate_features`: features in the target-rate section; 0 = all.
-pub fn write(w: *Writer, a: *const Analysis, rate_features: usize) Writer.Error!void {
+/// `limit`: features in the target-rate and signal sections; 0 = all.
+pub fn write(w: *Writer, a: *const Analysis, limit: usize) Writer.Error!void {
     try w.print("zscour · {d} files · {d} errors · {d} warnings · {d} notes\n\n", .{ a.tables.len, a.count(.err), a.count(.warn), a.count(.info) });
 
     try w.writeAll("FILES\n");
@@ -31,8 +31,8 @@ pub fn write(w: *Writer, a: *const Analysis, rate_features: usize) Writer.Error!
     for (a.columns) |*c| try columnLine(w, c, width);
 
     // Milestone sections (docs/PLAN.md); each prints nothing until built.
-    try target_rate.write(w, a, rate_features);
-    try signal.write(w, a);
+    try signal.write(w, a, limit);
+    try target_rate.write(w, a, limit);
     try adversarial.write(w, a);
     try assoc.write(w, a);
 
