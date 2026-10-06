@@ -527,7 +527,11 @@ fn card(w: *Writer, a: *const Analysis, ci: usize) Writer.Error!void {
         .feature => {},
     }
     switch (c.kind) {
-        .numeric => try w.print("<span class=\"badge\">{s}</span>", .{if (c.integral) "integer" else "decimal"}),
+        .numeric => if (c.discrete) |d| {
+            var b0: [40]u8 = undefined;
+            var b1: [40]u8 = undefined;
+            try w.print("<span class=\"badge\">{s} · {d} values {s}–{s}</span>", .{ d.kind.label(), d.values.len, numText(&b0, d.values[0]), numText(&b1, d.values[d.values.len - 1]) });
+        } else try w.print("<span class=\"badge\">{s}</span>", .{if (c.integral) "integer" else "decimal"}),
         .categorical => try w.print("<span class=\"badge\">categorical · {d} levels</span>", .{c.levels.len}),
         .empty => try w.writeAll("<span class=\"badge\">empty</span>"),
     }

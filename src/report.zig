@@ -67,7 +67,12 @@ fn columnLine(w: *Writer, c: *const Column, width: usize) Writer.Error!void {
         .feature => "   ",
     };
     switch (c.kind) {
-        .numeric => try w.print("{s} {s: <5}", .{ tag, if (c.integral) "int" else "float" }),
+        .numeric => try w.print("{s} {s: <5}", .{ tag, if (c.discrete) |d| switch (d.kind) {
+            .binary => "bin",
+            .scale => "scale",
+            .codes => "codes",
+            .decimals => "few",
+        } else if (c.integral) "int" else "float" }),
         .categorical => try w.print("{s} cat{d: <2}", .{ tag, c.levels.len }),
         .empty => try w.print("{s} empty", .{tag}),
     }

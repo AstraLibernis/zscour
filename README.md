@@ -23,6 +23,7 @@ so it can gate a pipeline.
 | across files | test levels never seen in train, test values outside train's range, train-vs-test shift (KS for numeric, total variation for categorical) — also for `--extra` |
 | id | missing, duplicated, shared between train and test, unsorted, non-contiguous |
 | target | inferred as the one train column test lacks; class balance; boolean spellings; extra-data levels absent from train; target rate per level / bin (M1); whether a feature being missing predicts the target |
+| discrete | numeric columns with ≤ 10 values as binary, integer scale, integer codes or few decimals; whether the target follows a scale in order, naming the value that breaks it (M4) |
 | signal | each column's out-of-fold power to predict the target alone; the same score on the id column and row position, and lag-1 autocorrelation, to catch leaks through file order (M2) |
 | rows | rows whose features repeat an earlier row's, and those among them with a *different* target (irreducible error); test or train rows that exactly copy a train or extra row |
 | submission | header is `id,<target>`, row count and ids match test row for row |

@@ -153,7 +153,7 @@ pub const Column = struct {
     /// Every finite value in every file is a whole number.
     integral: bool = false,
     /// Numeric with few distinct values; set by M4 (`discrete.zig`).
-    discrete: bool = false,
+    discrete: ?discrete.Info = null,
     /// Categorical: canonical spelling per level id (the most frequent one).
     levels: []const []const u8 = &.{},
     /// Categorical: every trimmed spelling folded into each level.
@@ -195,6 +195,8 @@ pub const Analysis = struct {
     // Filled by the milestone passes; empty until each is built.
     target_rates: []const target_rate.Feature = &.{},
     target_mode: target_rate.TargetMode = .none,
+    /// Total sum of squares of the train target (1/0 for binary), from M1.
+    target_ss: f64 = 0,
     spelling_groups: []const strings.Group = &.{},
     signal: []const signal.Score = &.{},
     signal_task: signal.Task = .binary,
@@ -262,8 +264,8 @@ pub fn analyze(arena: std.mem.Allocator, tables: []const Table, opts: Options) !
     try submissionFindings(cx);
 
     try strings.run(cx);
-    try discrete.run(cx);
     try target_rate.run(cx);
+    try discrete.run(cx); // uses M1's per-value rows
     try signal.run(cx);
     if (opts.adversarial) try adversarial.run(cx);
     try assoc.run(cx);

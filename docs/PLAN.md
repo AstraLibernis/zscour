@@ -44,7 +44,7 @@ milestone ships its text and HTML sections together.
 | M1.5 | HTML report: self-contained page, charts per column, drift overview, findings | `html` | **done** |
 | M2 | Single-feature predictive power; id and row-order leak checks | `signal` | **done** |
 | M3 | Base-form spelling match, punctuation-only values, null spellings | `strings` | **done** |
-| M4 | Numeric columns that are really discrete/ordinal | `discrete` | stub |
+| M4 | Numeric columns that are really discrete/ordinal | `discrete` | **done** |
 | M5 | Adversarial validation (train-vs-test classifier) via zarbor | `adversarial` | stub |
 | M6 | Associations: Spearman, Cramér's V, Theil's U, correlation ratio | `assoc` | stub |
 | M7 | Column stats: skew, kurtosis, zeros, imbalance, monotonicity, lag autocorrelation; sparklines | `stats` `bars` | stub |
@@ -205,14 +205,29 @@ As built:
   (one, "merged groups re-reported", needed a new fixture after the
   row-scan shortcut masked it).
 
-## M4 — numeric but really discrete
+## M4 — numeric but really discrete  ✓
 
-- A numeric column with few distinct values (≤ 10 in sweetviz, ≤ 5 in
-  ydata — pick one and say why) is reported as discrete: per-value table
-  instead of quantiles, and M1/M2 treat it per value.
-- Note whether the values are consecutive integers (an ordinal scale such as
-  a 0–5 rating) or arbitrary codes.
-- Tests: the airline ratings are flagged; Age is not.
+As built:
+
+- **Discrete** = a numeric feature with ≤ 10 distinct values over all files
+  (sweetviz's rule; ydata's ≤ 5 misses a 0–5 rating and 1–10 scales), as one
+  of four kinds: **binary** (2 values), **integer scale** (consecutive whole
+  numbers), **integer codes** (whole numbers with gaps — categories more than
+  a scale?), **few decimals**. One summary note per kind lists the columns;
+  the column table shows `bin`/`scale`/`codes`/`few`, the HTML badge "integer
+  scale · 6 values 0–5".
+- **Does the target follow the scale in order?** Pearson's linearity test
+  over M1's per-value rows: the weighted straight line's r² against the
+  values' η². Reported (note) when η² ≥ 0.01 and the line explains < 80% of
+  it, naming the value farthest from the line: an **end** value gets "check
+  whether it is a special code such as 'not applicable'", a **middle** value
+  "the relation bends there — treat it as categories".
+- M1 and M2 already used a row per value at ≤ 10 / ≤ 64 distinct values, so
+  M4 changes no grouping. M1's rows now carry the numeric value and labelled
+  count; the analysis keeps the target's total sum of squares.
+- Tests: 7 in `discrete.zig`; 8 mutations, all killed after adding a fixture
+  for a bend too small to matter (η² ≈ 0.0001).
+- Cost: none measurable (1.964 s vs 1.948 s).
 
 ## M5 — adversarial validation
 

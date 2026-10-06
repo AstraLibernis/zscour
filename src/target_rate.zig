@@ -56,6 +56,11 @@ pub const Row = struct {
     rate: ?f64,
     /// The same rate in the extra file, when it has a target.
     extra_rate: ?f64,
+    /// Train rows with a target, behind `rate`.
+    labelled: usize = 0,
+    /// The numeric value a per-value row stands for (not bins, other or
+    /// missing rows).
+    value: ?f64 = null,
 };
 
 pub const Feature = struct {
@@ -360,6 +365,8 @@ pub fn run(cx: an.Ctx) !void {
                 .test_share = if (tst) |t| share(counts[i][1], t.n) else null,
                 .rate = if (y_train != null and labelled[i][0] > 0) sums[i][0] / @as(f64, @floatFromInt(labelled[i][0])) else null,
                 .extra_rate = if (y_extra != null and labelled[i][1] > 0) sums[i][1] / @as(f64, @floatFromInt(labelled[i][1])) else null,
+                .labelled = labelled[i][0],
+                .value = if (c.kind == .numeric and !l.binned and kind == .value and i < l.points.len) l.points[i] else null,
             };
             try rows.append(cx.arena, row);
             if (mode == .binary and kind != .other) if (row.rate) |rate| {
@@ -373,6 +380,7 @@ pub fn run(cx: an.Ctx) !void {
     if (y_train != null) std.mem.sort(Feature, out.items, {}, moreExplained);
     a.target_rates = out.items;
     a.target_mode = mode;
+    a.target_ss = y_ss;
 }
 
 /// Highest η² first; columns without one (the target) after, in file order.
