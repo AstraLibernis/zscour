@@ -106,7 +106,7 @@ fn score(arena: std.mem.Allocator, t: *const Target, g: Groups) !Score {
     switch (t.task) {
         .binary, .regression => {
             const cells = try arena.alloc([folds]Cell, g.n);
-            @memset(cells, [_]Cell{.{}} ** folds);
+            @memset(cells, @as([folds]Cell, @splat(.{})));
             var all: Cell = .{};
             for (t.y, g.of, t.fold) |y, gi, f| {
                 if (std.math.isNan(y)) continue;

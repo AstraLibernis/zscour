@@ -161,7 +161,7 @@ pub const Column = struct {
     per: [4]?PerTable = .{ null, null, null, null },
 
     pub fn at(c: *const Column, r: Role) ?*const PerTable {
-        if (c.per[@intFromEnum(r)]) |*p| return p;
+        if (c.per[@backingInt(r)]) |*p| return p;
         return null;
     }
 };
@@ -412,7 +412,7 @@ fn typeColumn(cx: Ctx, c: *Column) !void {
             },
         }
         if (p.nonint > 0) c.integral = false;
-        c.per[@intFromEnum(t.role)] = p;
+        c.per[@backingInt(t.role)] = p;
     }
     if (numbers > 0 and c.kind == .categorical)
         try cx.add(.warn, .mixed_type, null, c.name, "mixed types: {d} numeric and {d} text values; kept as categorical", .{ numbers, texts });
@@ -452,7 +452,6 @@ fn fillNumeric(arena: std.mem.Allocator, t: *const Table, p: *PerTable) !void {
     };
     std.mem.sort(f64, p.sorted, {}, std.sort.asc(f64));
 }
-
 
 /// Level ids for a categorical column, shared across files. Spellings that
 /// differ only in case are one level, written with the most frequent spelling.
@@ -569,7 +568,7 @@ fn columnFindings(cx: Ctx, c: *const Column) !void {
     var values_total: usize = 0;
     for (c.per, 0..) |maybe, ri| {
         const p = maybe orelse continue;
-        const role: Role = @enumFromInt(ri);
+        const role: Role = @fromBackingInt(@intCast(ri));
         const miss = p.missingCount(c.kind);
         if (miss > 0) {
             // A feature's missing values are a note up to 5% of a file and a
@@ -706,7 +705,7 @@ fn idFindings(cx: Ctx) !void {
     }
     for (c.per, 0..) |maybe, ri| {
         const p = maybe orelse continue;
-        const role: Role = @enumFromInt(ri);
+        const role: Role = @fromBackingInt(@intCast(ri));
         if (c.kind != .numeric) continue;
         const miss = p.n - p.sorted.len;
         if (miss > 0) try cx.add(.err, .id, role, c.name, "{d} rows have no id", .{miss});
@@ -919,15 +918,15 @@ fn rowFindings(cx: Ctx) !void {
             try cx.add(.warn, .duplicate_rows, t.role, null, "{d} rows repeat an earlier row's features ({d} also with the same target)", .{ dups, exact });
         if (conflicts.count > 0)
             try cx.add(.warn, .conflicting_labels, t.role, null, "{d} rows repeat an earlier row's features with a different target (records {any}): irreducible error", .{ conflicts.count, conflicts.slice() });
-        indexes[@intFromEnum(t.role)] = ix;
+        indexes[@backingInt(t.role)] = ix;
     }
 
     const key: RowKey = .{ .a = a, .features = features.items, .mask = cx.opts.row_hash_mask };
     const pairs = [_][2]Role{ .{ .train, .@"test" }, .{ .extra, .train }, .{ .extra, .@"test" } };
     for (pairs) |pair| {
-        const ix = indexes[@intFromEnum(pair[0])] orelse continue;
+        const ix = indexes[@backingInt(pair[0])] orelse continue;
         const t = a.table(pair[1]) orelse continue;
-        if (indexes[@intFromEnum(pair[1])] == null) continue;
+        if (indexes[@backingInt(pair[1])] == null) continue;
         var hits: usize = 0;
         for (0..t.n_rows) |r| hits += @intFromBool(ix.find(key, pair[0], pair[1], r) != null);
         if (hits > 0)
@@ -1119,7 +1118,6 @@ test "schema: test missing a feature is an error" {
     try testing.expect(a.has(.schema));
     try testing.expect(a.count(.err) >= 1);
 }
-
 
 test "-0 and 0 are one value for duplicate detection" {
     var f = Fixture.init();

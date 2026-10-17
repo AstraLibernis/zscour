@@ -171,7 +171,7 @@ pub fn run(cx: an.Ctx) !void {
         if (values.len == 0) continue;
         const kind = classify(values);
         c.discrete = .{ .kind = kind, .values = values };
-        const k = @intFromEnum(kind);
+        const k = @backingInt(kind);
         counts[k] += 1;
         if (counts[k] <= 12) try names[k].print(cx.arena, "{s}{s} ({d}–{d})", .{ if (counts[k] > 1) ", " else "", c.name, values[0], values[values.len - 1] });
 
@@ -189,7 +189,7 @@ pub fn run(cx: an.Ctx) !void {
     }
     for (counts, names, 0..) |n, list, k| {
         if (n == 0) continue;
-        const kind: Kind = @enumFromInt(k);
+        const kind: Kind = @fromBackingInt(@intCast(k));
         try cx.add(.info, .discrete_numeric, null, null, "{d} numeric column{s} {s} {s} — at most {d} distinct values: {s}{s}", .{
             n,                          if (n > 1) "s" else "",
             if (n > 1) "are" else "is",

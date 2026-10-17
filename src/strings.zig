@@ -367,9 +367,9 @@ test "punctuation only, short and long" {
     try testing.expect(isPunctuationOnly("— —"));
     try testing.expect(!isPunctuationOnly(""));
     try testing.expect(!isPunctuationOnly("a-"));
-    try testing.expect(isPunctuationOnly("-" ** 100));
-    try testing.expect(!isPunctuationOnly("-" ** 100 ++ "x"));
-    try testing.expect(!isPunctuationOnly("-" ** 100 ++ "é"));
+    try testing.expect(isPunctuationOnly(&@as([100]u8, @splat('-'))));
+    try testing.expect(!isPunctuationOnly(&@as([100]u8, @splat('-')) ++ "x"));
+    try testing.expect(!isPunctuationOnly(&@as([100]u8, @splat('-')) ++ "é"));
 }
 
 test "markers on base form" {

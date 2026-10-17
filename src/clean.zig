@@ -161,20 +161,16 @@ test "clean: trim, missing, case fold, bool target, id sort, column order, quoti
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    const out = try cleaned(arena,
-        "\xEF\xBB\xBFid,x,c,y\r\n" ++
-            "2, 7 ,Eco,False\r\n" ++
-            "0,NA,eco,True\r\n" ++
-            "1,,\"a,b\",True\r\n" ++
-            "3,1e3,Eco,False\r\n",
-        "c,id,x\n Eco ,5,1\nECO,4,2\n");
-    try testing.expectEqualStrings(
-        "id,x,c,y\n" ++
-            "0,,Eco,1\n" ++
-            "1,,\"a,b\",1\n" ++
-            "2,7,Eco,0\n" ++
-            "3,1e3,Eco,0\n",
-        out[0]);
+    const out = try cleaned(arena, "\xEF\xBB\xBFid,x,c,y\r\n" ++
+        "2, 7 ,Eco,False\r\n" ++
+        "0,NA,eco,True\r\n" ++
+        "1,,\"a,b\",True\r\n" ++
+        "3,1e3,Eco,False\r\n", "c,id,x\n Eco ,5,1\nECO,4,2\n");
+    try testing.expectEqualStrings("id,x,c,y\n" ++
+        "0,,Eco,1\n" ++
+        "1,,\"a,b\",1\n" ++
+        "2,7,Eco,0\n" ++
+        "3,1e3,Eco,0\n", out[0]);
     try testing.expectEqualStrings("id,x,c\n4,2,Eco\n5,1,Eco\n", out[1]);
 }
 

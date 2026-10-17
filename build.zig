@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
 
     const run = b.addRunArtifact(exe);
     run.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run.addArgs(args);
+    run.addPassthruArgs();
     b.step("run", "Audit (and optionally clean) a dataset's CSV files").dependOn(&run.step);
 
     const tests = b.addTest(.{ .root_module = mod });

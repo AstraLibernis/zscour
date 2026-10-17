@@ -2,11 +2,11 @@
     .name = .zscour,
     .version = "0.1.0",
     .fingerprint = 0x23525c48d86c72fd,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .zarbor = .{
-            .url = "git+https://github.com/AstraLibernis/zarbor.git#a9ee25b60033a6e49dacdd255099287d2f47e597",
-            .hash = "zarbor-0.5.0-IulqYLw9CgB2T0_S8AoXZT82VOLUGDSKdOHq9R9A1OTO",
+            .url = "git+https://github.com/AstraLibernis/zarbor.git#c05daaaf31a0ba5db5b1d394a1bc3069d4f29619",
+            .hash = "zarbor-0.5.0-IulqYEbJEAD_XCpHJX2V0cFBCBmwGWAVMPJLZIHpwFmX",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src", "README.md", "COPYING" },

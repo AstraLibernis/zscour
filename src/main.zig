@@ -61,13 +61,13 @@ fn parseArgs(arena: std.mem.Allocator, io: std.Io, argv: []const [:0]const u8) !
         i += 1;
         const v: []const u8 = argv[i];
         if (std.mem.eql(u8, arg, "--train")) {
-            args.files[@intFromEnum(tbl.Role.train)] = v;
+            args.files[@backingInt(tbl.Role.train)] = v;
         } else if (std.mem.eql(u8, arg, "--test")) {
-            args.files[@intFromEnum(tbl.Role.@"test")] = v;
+            args.files[@backingInt(tbl.Role.@"test")] = v;
         } else if (std.mem.eql(u8, arg, "--extra")) {
-            args.files[@intFromEnum(tbl.Role.extra)] = v;
+            args.files[@backingInt(tbl.Role.extra)] = v;
         } else if (std.mem.eql(u8, arg, "--sub")) {
-            args.files[@intFromEnum(tbl.Role.sub)] = v;
+            args.files[@backingInt(tbl.Role.sub)] = v;
         } else if (std.mem.eql(u8, arg, "--id")) {
             args.opts.id = v;
         } else if (std.mem.eql(u8, arg, "--target")) {
@@ -98,7 +98,7 @@ fn fromDir(arena: std.mem.Allocator, io: std.Io, args: *Args, dir: []const u8) !
     for (names) |n| {
         const path = try std.fs.path.join(arena, &.{ dir, n[1] });
         std.Io.Dir.cwd().access(io, path, .{}) catch continue;
-        if (args.files[@intFromEnum(n[0])] == null) args.files[@intFromEnum(n[0])] = path;
+        if (args.files[@backingInt(n[0])] == null) args.files[@backingInt(n[0])] = path;
         found = true;
     }
     if (!found) return error.NoDataInDir;
@@ -127,7 +127,7 @@ pub fn main(init: std.process.Init) !void {
             std.log.err("{s}: {s}", .{ path, @errorName(err) });
             std.process.exit(2);
         };
-        const t = tbl.parse(arena, @enumFromInt(ri), path, bytes) catch |err| {
+        const t = tbl.parse(arena, @fromBackingInt(@intCast(ri)), path, bytes) catch |err| {
             std.log.err("{s}: {s}", .{ path, @errorName(err) });
             std.process.exit(2);
         };

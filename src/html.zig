@@ -632,7 +632,7 @@ fn assocSection(w: *Writer, a: *const Analysis) Writer.Error!void {
         }
         const p = pairOf(a, ri, cj) orelse continue;
         try w.print("<rect x=\"{d:.1}\" y=\"{d:.1}\" width=\"{d:.1}\" height=\"{d:.1}\" fill=\"var(--s-train)\" fill-opacity=\"{d:.3}\"{s}><title>", .{
-            x + 1, y + 1, cell - 2, cell - 2, 0.04 + 0.96 * p.strength(),
+            x + 1,                                                                                   y + 1, cell - 2, cell - 2, 0.04 + 0.96 * p.strength(),
             if (p.strength() >= assoc.high) " stroke=\"var(--ink-1)\" stroke-width=\"1.5\"" else "",
         });
         try esc(w, a.columns[ri].name);
@@ -1094,9 +1094,7 @@ test "esc and count" {
 test "a hostile column name or level is escaped everywhere, never markup" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
-    const html = try render(arena_state.allocator(),
-        "id,\"<script>alert(1)</script>\",y\n0,\"<img src=x onerror=alert(2)>\",1\n1,b,0\n",
-        "id,\"<script>alert(1)</script>\"\n2,b\n");
+    const html = try render(arena_state.allocator(), "id,\"<script>alert(1)</script>\",y\n0,\"<img src=x onerror=alert(2)>\",1\n1,b,0\n", "id,\"<script>alert(1)</script>\"\n2,b\n");
     // The only <script> tag is the report's own, at the end.
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, html, "<script>"));
     try testing.expect(std.mem.find(u8, html, "<img") == null);

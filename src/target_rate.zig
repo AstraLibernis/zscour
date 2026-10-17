@@ -528,9 +528,7 @@ fn rowByLabel(f: *const Feature, label: []const u8) *const Row {
 test "categorical: rates per level, shares per file, missing row, boolean target" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
-    const a = try analyzed(arena_state.allocator(),
-        "id,c,y\n0,a,True\n1,a,False\n2,a,True\n3,b,False\n4,,True\n",
-        "id,c\n5,a\n6,b\n7,b\n8,b\n");
+    const a = try analyzed(arena_state.allocator(), "id,c,y\n0,a,True\n1,a,False\n2,a,True\n3,b,False\n4,,True\n", "id,c\n5,a\n6,b\n7,b\n8,b\n");
     try testing.expectEqualStrings("True", a.target_mode.binary.label);
     const f = feature(&a, "c");
     const ra = rowByLabel(f, "a");
@@ -568,9 +566,7 @@ test "categorical: levels past max_rows pool into other, test matched against it
 test "numeric: few values get a row each; test-only values go to other" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
-    const a = try analyzed(arena_state.allocator(),
-        "id,x,y\n0,1,1\n1,1,1\n2,2,0\n3,3,0\n4,3,1\n",
-        "id,x\n5,1\n6,7\n");
+    const a = try analyzed(arena_state.allocator(), "id,x,y\n0,1,1\n1,1,1\n2,2,0\n3,3,0\n4,3,1\n", "id,x\n5,1\n6,7\n");
     const f = feature(&a, "x");
     try testing.expect(!f.binned);
     try testing.expectEqual(@as(f64, 1), rowByLabel(f, "1").rate.?);
