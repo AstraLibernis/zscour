@@ -18,7 +18,7 @@ milestone ships its text and HTML sections together.
   without updating this plan.
 - **Done** means: `zig build test` green; every new test mutation-checked with
   `tools/mutate.sh` (break, watch it fail, restore); the airline data
-  (`~/workspace/kaggle/airline-satisfaction`) run in ReleaseFast and the
+  (a local copy of the airline-satisfaction dataset) run in ReleaseFast and the
   output read; time and peak RSS recorded in [measurements.md](measurements.md).
 - Thresholds borrowed from another tool are quoted with their source file and
   line, **re-read from the source when implementing** — the survey notes in
@@ -71,7 +71,7 @@ As built (differences from the first draft of this plan in **bold**):
   numeric target → mean; **multiclass → shares only, no rate** (gap, below).
 - **Features are ranked by η²** (correlation ratio squared: between-row
   variance of the target over its total variance), and the section shows the
-  top 20; `--rates N` changes that, `--rates 0` shows all. Without the cap a
+  top 20; `--top N` changes that, `--top 0` shows all. Without the cap a
   300-feature table printed 3 937 lines.
 - Bars: share bars scaled to the feature's largest row; rate bars 0–100%; any
   nonzero share draws at least 1/8 cell.
@@ -235,7 +235,7 @@ As built:
 
 As built:
 
-- zarbor is a `build.zig.zon` dependency pinned to commit a9ee25b (LGPL-3.0+,
+- zarbor is a `build.zig.zon` dependency pinned to its v0.6.0 release (LGPL-3.0+,
   fetched into `zig-pkg/`, which is gitignored). Train vs test, and train vs
   extra; `--no-adversarial` skips it.
 - Per comparison: up to 10 000 rows a side (fixed-seed sample), categoricals

@@ -70,12 +70,12 @@ modelling decisions, and the report gives you the counts to make them.
     docs/measurements.md timings
     tools/mutate.sh      mutation check for the tests
 
-Modules marked M1–M9 are stubs until their milestone in
-[docs/PLAN.md](docs/PLAN.md) is done; their tests are skipped, not passing.
+The extra drift scores of M9 (PSI, Wasserstein, Cramér's V) are a stub until that milestone in
+[docs/PLAN.md](docs/PLAN.md) is done; its test is skipped, not passing.
 
 ## Build
 
-    zig build --release=fast      # zig 0.16; binary at zig-out/bin/zscour
+    zig build --release=fast      # zig 0.17; binary at zig-out/bin/zscour
     zig build test
 
 The CSV parser is [zsift](https://github.com/AstraLibernis/zsift), vendored

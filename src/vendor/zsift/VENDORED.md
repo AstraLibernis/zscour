@@ -1,7 +1,7 @@
 # Vendored: zsift
 
-The CSV parser zscour reads files with. Copied from zarbor's vendored copy, so zscour has no
-dependencies of any kind.
+The CSV parser zscour reads files with. Copied from zarbor's vendored copy. zscour's only
+fetched dependency is zarbor (`build.zig.zon`).
 
 - Source: https://github.com/AstraLibernis/zsift
 - Commit: `a0e581c27bb935edf1931dde9a7ca47e901c7636` (after zsift v0.4 milestone M5), copied 2026-09-29
