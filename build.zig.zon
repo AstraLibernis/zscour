@@ -1,16 +1,16 @@
 .{
     .name = .zscour,
-    .version = "0.1.0",
+    .version = "0.1.1",
     .fingerprint = 0x23525c48d86c72fd,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .zarbor = .{
-            .url = "git+https://github.com/AstraLibernis/zarbor.git#57062572a54ab33d3f8f49beb47c6ac6447002bd",
-            .hash = "zarbor-0.6.0-IulqYFDUEAAqc1Zh5z6xAyodsnszZ0RDJ-YinWF1ER0S",
+            .url = "git+https://github.com/AstraLibernis/zarbor.git#bd15c83d7a640a27e59ff6fd5626f7dcf59e9b1f",
+            .hash = "zarbor-0.6.1-IulqYLoXEQDJ0ydHnATsGRKrkuNwgTCK8MBOsrdpDTZK",
         },
         .zstrata = .{
-            .url = "git+https://github.com/AstraLibernis/zstrata.git#03c4dd4a43a11407ea5d845a897f6cb9eb7bfbc2",
-            .hash = "zstrata-0.0.0-1cYpdeUoBAAg4Uy-6xmxZ30DQ3VAjcIjzEHQWFI8oGEl",
+            .url = "git+https://github.com/AstraLibernis/zstrata.git#975c36514ba0ce9b3fd091f979c644af18675db9",
+            .hash = "zstrata-0.1.0-1cYpdeUoBAC7EW8g8Qhnn8A6tIO0zVktPbd9dUHQZs94",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src", "README.md", "COPYING" },
