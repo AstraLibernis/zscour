@@ -87,5 +87,5 @@ fetched by `zig build` at a pinned commit.
 
 ## Licence
 
-GPL-3.0-or-later (`COPYING`). zsift (vendored) and zarbor (dependency) are
+GPL-3.0-or-later (`COPYING`). zsift (vendored), zarbor and the zstrata library (dependencies) are
 LGPL-3.0-or-later.

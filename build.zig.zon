@@ -8,6 +8,10 @@
             .url = "git+https://github.com/AstraLibernis/zarbor.git#57062572a54ab33d3f8f49beb47c6ac6447002bd",
             .hash = "zarbor-0.6.0-IulqYFDUEAAqc1Zh5z6xAyodsnszZ0RDJ-YinWF1ER0S",
         },
+        .zstrata = .{
+            .url = "git+https://github.com/AstraLibernis/zstrata.git#03c4dd4a43a11407ea5d845a897f6cb9eb7bfbc2",
+            .hash = "zstrata-0.0.0-1cYpdeUoBAAg4Uy-6xmxZ30DQ3VAjcIjzEHQWFI8oGEl",
+        },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src", "README.md", "COPYING" },
 }

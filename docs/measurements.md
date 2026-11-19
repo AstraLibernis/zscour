@@ -20,3 +20,4 @@ submission 299,844 × 2.
 | 2026-10-06 | M6 | airline, all on | 2.491 s ± 0.006 | — | hyperfine -N, 5 runs |
 | 2026-10-06 | M6 | 300-column generated file, `--no-adversarial` | 2.681 → 1.537 s | 431 MB | one-pass Spearman for complete columns |
 | 2026-10-06 | M7 | airline, all on | 2.598 s ± 0.028 | — | hyperfine -N, 5 runs |
+| 2026-11-19 | zstrata sorts | generated 500,000 × 25 file (82 MB), `--train FILE --no-adversarial`, Windows | 1.920 → 0.953 s ± 0.003 | — | hyperfine -N, 5 runs; report byte-identical. Sorting numeric columns 651 → 75 ms and ranks (association stage) 450 → 122 ms with zstrata radix sorts; parsing each number once in the fill pass 191 → 139 ms |

@@ -9,11 +9,13 @@ pub fn build(b: *std.Build) void {
 
     // zarbor (LGPL-3.0+) trains M5's train-vs-test classifier.
     const zarbor = b.dependency("zarbor", .{ .target = target, .optimize = optimize }).module("zarbor");
+    // zstrata supplies the radix sorts (numeric columns and ranks).
+    const zstrata = b.dependency("zstrata", .{ .target = target, .optimize = optimize, .@"lib-only" = true }).module("zstrata");
     const mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "zarbor", .module = zarbor }},
+        .imports = &.{ .{ .name = "zarbor", .module = zarbor }, .{ .name = "zstrata", .module = zstrata } },
     });
     const exe = b.addExecutable(.{ .name = "zscour", .root_module = mod });
     b.installArtifact(exe);
@@ -33,6 +35,7 @@ pub fn build(b: *std.Build) void {
     const tsan_zarbor = b.dependency("zarbor", .{ .target = tsan_target, .optimize = optimize }).module("zarbor");
     tsan_zarbor.sanitize_thread = true;
     tsan_zarbor.link_libc = true;
+    const tsan_zstrata = b.dependency("zstrata", .{ .target = tsan_target, .optimize = optimize, .@"lib-only" = true }).module("zstrata");
     const tsan_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
@@ -40,7 +43,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libc = true,
             .sanitize_thread = true,
-            .imports = &.{.{ .name = "zarbor", .module = tsan_zarbor }},
+            .imports = &.{ .{ .name = "zarbor", .module = tsan_zarbor }, .{ .name = "zstrata", .module = tsan_zstrata } },
         }),
         .use_llvm = true,
     });

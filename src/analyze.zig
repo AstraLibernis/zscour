@@ -6,6 +6,7 @@
 //! files) and the findings. `report.zig` prints it; `clean.zig` writes from it.
 
 const std = @import("std");
+const zstrata = @import("zstrata");
 const tbl = @import("table.zig");
 const Table = tbl.Table;
 const Examples = tbl.Examples;
@@ -372,6 +373,14 @@ fn classify(s: []const u8) FieldClass {
     return .number;
 }
 
+/// `classify`, keeping the number it parsed in `out` so the caller does not parse it again.
+fn classifyParse(s: []const u8, out: *f64) FieldClass {
+    if (s.len == 0) return .empty;
+    if (isMarker(s)) return .marker;
+    out.* = std.fmt.parseFloat(f64, s) catch return .text;
+    return .number;
+}
+
 fn typeColumn(cx: Ctx, c: *Column) !void {
     // Pass 1: decide the kind from every file at once, so a column cannot be
     // numeric in train and categorical in test.
@@ -425,7 +434,8 @@ fn fillNumeric(arena: std.mem.Allocator, t: *const Table, p: *PerTable) !void {
         const s = trim(raw);
         if (s.len != raw.len) p.padded.add(t.records[r]);
         v.* = std.math.nan(f64);
-        switch (classify(s)) {
+        var x: f64 = 0;
+        switch (classifyParse(s, &x)) {
             .empty => p.empty += 1,
             .marker => p.noteMarker(s),
             .text => {
@@ -433,7 +443,6 @@ fn fillNumeric(arena: std.mem.Allocator, t: *const Table, p: *PerTable) !void {
                 p.junk.add(t.records[r]);
             },
             .number => {
-                const x = std.fmt.parseFloat(f64, s) catch unreachable; // zsnag:ok classify parsed it
                 if (!std.math.isFinite(x)) {
                     p.nonfinite += 1;
                 } else {
@@ -450,7 +459,9 @@ fn fillNumeric(arena: std.mem.Allocator, t: *const Table, p: *PerTable) !void {
         p.sorted[k] = v;
         k += 1;
     };
-    std.mem.sort(f64, p.sorted, {}, std.sort.asc(f64));
+    // Finite values only, with -0 already folded into 0: the radix order is the numeric order.
+    const scratch = try arena.alloc(f64, kept);
+    zstrata.sort.floats(f64, p.sorted, scratch);
 }
 
 /// Level ids for a categorical column, shared across files. Spellings that

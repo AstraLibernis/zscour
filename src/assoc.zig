@@ -28,6 +28,7 @@
 //! - At most 100 000 train rows, a fixed-seed sample, so wide files stay fast.
 
 const std = @import("std");
+const zstrata = @import("zstrata");
 const an = @import("analyze.zig");
 
 pub const Method = enum {
@@ -88,13 +89,8 @@ pub fn ranks(arena: std.mem.Allocator, x: []const f64) ![]f64 {
         out[i] = std.math.nan(f64);
         if (!std.math.isNan(v)) try idx.append(arena, @intCast(i));
     }
-    const Ctx = struct {
-        x: []const f64,
-        fn less(c: @This(), p: u32, q: u32) bool {
-            return c.x[p] < c.x[q];
-        }
-    };
-    std.mem.sort(u32, idx.items, Ctx{ .x = x }, Ctx.less);
+    // Radix sort of the row ids by value: stable, as the comparison sort it replaced was.
+    try zstrata.sort.floatIndex(f64, arena, x, idx.items);
     var i: usize = 0;
     while (i < idx.items.len) {
         var j = i;
